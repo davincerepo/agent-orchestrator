@@ -51,7 +51,12 @@ if (isWindowsDev) {
 	mkdirSync(outDir, { recursive: true });
 }
 
-const result = spawnSync("go", ["build", "-o", buildOutPath, "./cmd/ao"], {
+const buildArgs = ["build", "-o", buildOutPath];
+if (process.env.AO_DESKTOP_FLAVOR === "fleet-portable") {
+	buildArgs.push("-ldflags", "-X github.com/aoagents/agent-orchestrator/backend/internal/cli.desktopFlavor=fleet-portable");
+}
+buildArgs.push("./cmd/ao");
+const result = spawnSync("go", buildArgs, {
 	cwd: backendRoot,
 	stdio: "inherit",
 	windowsHide: true,

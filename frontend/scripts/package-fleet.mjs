@@ -42,6 +42,8 @@ writeFileSync(join(appDir, "README-Fleet.txt"), [
 	"Update: quit Fleet and replace this application folder. Keep your data directory.",
 	"Automatic updates and the official ao-app:// protocol registration are disabled.",
 	"Advanced: AO_FLEET_HOME sets an absolute data root; AO_FLEET_PORT defaults to 13001.",
+	"CLI: resources/daemon/ao.exe always targets Fleet. install-fleet.ps1 registers it as ao on your user PATH.",
+	"ao start opens this package's fleet.exe without downloading or opening the official AO app.",
 	"Do not point Fleet at an official AO data directory. Other AO_* isolation overrides are ignored.",
 	"",
 ].join("\r\n"));

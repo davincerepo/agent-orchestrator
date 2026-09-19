@@ -21,6 +21,10 @@ export function resolveFleetRuntime(home: string, env: Record<string, string | u
 		browserDir: path.join(root, "br"),
 		logPath: path.join(root, "daemon.log"),
 		env: {
+			// Pin these too: the Fleet CLI re-derives isolation from them, and a
+			// login shell must not redirect it away from this desktop instance.
+			AO_FLEET_HOME: root,
+			AO_FLEET_PORT: String(port),
 			AO_DATA_DIR: path.join(root, "data"),
 			AO_RUN_FILE: path.join(root, "running.json"),
 			AO_PORT: String(port),

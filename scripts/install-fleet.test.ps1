@@ -33,6 +33,12 @@ $junction = Join-Path $testRoot 'junction'
 $process = $null
 $originalBuild = ${function:Invoke-FleetBuild}
 $originalHome = $env:AO_FLEET_HOME
+$originalPath = $env:PATH
+$originalCLIValidation = ${function:Assert-FleetCLI}
+$originalUserPath = ${function:Get-FleetUserPath}
+$originalMachinePath = ${function:Get-FleetMachinePath}
+$originalSetUserPath = ${function:Set-FleetUserPath}
+$originalBroadcast = ${function:Send-FleetEnvironmentChange}
 try {
     foreach ($directory in @($source, $desktop, $repository)) { [void][IO.Directory]::CreateDirectory($directory) }
     foreach ($file in $script:FleetFiles) {
@@ -126,6 +132,50 @@ try {
     Install-FleetPackage $source $destination $repository $desktop
     Write-Host 'PASS: active installation refused; process left running; retry succeeds after exit'
 
+    # Registry/environment broadcasts are fake; PATH resolution uses real files
+    # in the scratch installation, without executing the placeholder ao.exe.
+    $official = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\agent-orchestrator\resources\daemon'
+    $other = Join-Path $testRoot 'unrelated tools'
+    [void][IO.Directory]::CreateDirectory($other)
+    $script:testUserPath = "$official;$other"
+    $script:testMachinePath = ''
+    $script:testPathWrites = 0
+    $script:testBroadcasts = 0
+    function Get-FleetUserPath { return $script:testUserPath }
+    function Get-FleetMachinePath { return $script:testMachinePath }
+    function Set-FleetUserPath([string]$Value) { $script:testUserPath = $Value; $script:testPathWrites++ }
+    function Send-FleetEnvironmentChange { $script:testBroadcasts++ }
+    function Assert-FleetCLI([string]$Directory) {
+        Assert (Test-Path -LiteralPath (Join-Path $Directory 'resources\daemon\ao.exe')) 'CLI is missing.'
+    }
+    Register-FleetCLI $destination
+    $expectedCLI = Join-Path $destination 'resources\daemon\ao.exe'
+    Assert ((Get-Command ao.exe -CommandType Application | Select-Object -First 1).Source -eq $expectedCLI) 'ao resolves to another installation.'
+    Assert ($script:testUserPath -eq "$(Split-Path -Parent $expectedCLI);$other") 'User PATH must replace the official CLI entry and preserve unrelated paths.'
+    Assert ($script:testPathWrites -eq 1 -and $script:testBroadcasts -eq 1) 'PATH change was not saved and broadcast.'
+    Register-FleetCLI $destination
+    Assert ($script:testPathWrites -eq 1) 'Repeated install duplicated or rewrote PATH.'
+
+    $moved = Join-Path $testRoot 'moved fleet'
+    [void][IO.Directory]::CreateDirectory((Join-Path $moved 'resources\daemon'))
+    Copy-Item -LiteralPath $expectedCLI -Destination (Join-Path $moved 'resources\daemon\ao.exe')
+    Register-FleetCLI $moved
+    Assert ($script:testUserPath -eq "$(Join-Path $moved 'resources\daemon');$other") 'Relocated install left its previous managed CLI on PATH.'
+    Assert (Test-Path -LiteralPath $expectedCLI) 'Registration modified the old installation files.'
+
+    $script:testMachinePath = Split-Path -Parent $expectedCLI
+    Must-Fail { Assert-FleetCLIPathPriority $moved } 'Machine PATH'
+    Assert ($script:testPathWrites -eq 2) 'Machine conflict modified User PATH.'
+    $script:testMachinePath = ''
+    $beforeFailedPath = $env:PATH
+    function Set-FleetUserPath([string]$Value) { throw 'simulated registry write failure' }
+    Must-Fail { Register-FleetCLI $destination } 'registry write failure'
+    Assert ($env:PATH -eq $beforeFailedPath) 'Failed persistence modified process PATH.'
+    ${function:Set-FleetUserPath} = $originalSetUserPath
+    # No later test registers PATH; restore the real process PATH now.
+    $env:PATH = $originalPath
+    Write-Host 'PASS: Fleet CLI selection, official PATH replacement, idempotence, relocation and failed registration; no real user PATH changes'
+
     & git -C $repository init --initial-branch=main-fleet --quiet
     if ($LASTEXITCODE -ne 0) { throw 'Could not create test repository.' }
     function Invoke-FleetBuild([string]$RepositoryRoot) { throw 'simulated build failure' }
@@ -146,6 +196,12 @@ try {
 } finally {
     ${function:Invoke-FleetBuild} = $originalBuild
     $env:AO_FLEET_HOME = $originalHome
+    $env:PATH = $originalPath
+    ${function:Assert-FleetCLI} = $originalCLIValidation
+    ${function:Get-FleetUserPath} = $originalUserPath
+    ${function:Get-FleetMachinePath} = $originalMachinePath
+    ${function:Set-FleetUserPath} = $originalSetUserPath
+    ${function:Send-FleetEnvironmentChange} = $originalBroadcast
     if ($null -ne $process -and -not $process.HasExited) { Stop-Process -Id $process.Id; $process.WaitForExit() }
     if (Test-Path -LiteralPath $junction) { [IO.Directory]::Delete($junction) }
     $resolved = Get-FullPath $testRoot

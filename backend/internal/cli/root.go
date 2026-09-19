@@ -22,6 +22,9 @@ import (
 
 // Execute runs the ao CLI with process stdio.
 func Execute() error {
+	if err := configureFleetCLI(); err != nil {
+		return err
+	}
 	return executeWithDeps(DefaultDeps(), os.Args[1:])
 }
 
