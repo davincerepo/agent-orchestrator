@@ -1,5 +1,7 @@
 # 将官方 AO 会话迁移到 AO Fleet
 
+> 历史参考：本工具仅保留在 `fleet/feat/session-import`，不合入 `main-fleet`，不随 Fleet 包提供。以下流程对应 2026-09 的一次性同机迁移及 schema 139/140，未来版本不能直接照搬。
+
 这是一次性、同机的会话接管工具。项目、AO 聊天历史、附件、工作区文件及未提交改动迁入 Fleet；迁移后由 Fleet 继续这些会话。两套程序不能同时恢复同一批会话。
 
 工具独立于桌面主进程、Go daemon 和 API，不改数据库 schema、不增加设置页或多语言文案。无需重新打包 Fleet。代码在 `frontend/fork-fleet/migration.mjs`，入口是 `frontend/scripts/migrate-fleet.mjs`。
