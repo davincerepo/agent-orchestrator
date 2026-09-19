@@ -13,7 +13,7 @@ Fork：https://github.com/davincerepo/agent-orchestrator
 | `fleet/fix/windows-codex-accounts` | Windows Codex 账号、ACL 与恢复 | `fix-windows-codex-accounts.md` |
 | `fleet/feat/portable` | 免安装、数据与进程隔离、AO Fleet 显示名称 | `fleet-portable.md` |
 | `fleet/feat/model-parameters` | Effort/Fast、真实线程参数、Reviewer、Chat/Terminal 同步与显示 | `add-model-params.md` |
-| `fleet/feat/project-scope` | 当前项目查询与派单范围 | `agent-project-scope.md` |
+| `fleet/feat/agent-commands` | 项目查询与派单范围、消息投递策略与长度限制 | `agent-project-scope.md`、`message-steering.md` |
 | `fleet/feat/session-import` | 一次性导入与回滚工具，仅供参考，不合入主分支 | `migrate-official-sessions.md`（仅参考分支） |
 
 ## 分支维护约定
