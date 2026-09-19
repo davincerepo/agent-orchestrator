@@ -5,6 +5,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:FleetFiles = @('fleet.exe', 'resources\app.asar', 'resources\daemon\ao.exe', 'resources\acp-runtime\node\node.exe', 'README-Fleet.txt')
 $script:FleetMarker = '.fleet-install.json'
+$script:FleetDefaultInstallDir = 'C:\ao'
 
 function Get-FullPath([string]$Path) {
     if ($Path -notmatch '^[A-Za-z]:[\\/]') { throw "Use an absolute local drive path: $Path" }
@@ -273,17 +274,35 @@ function Invoke-FleetBuild([string]$RepositoryRoot) {
     } finally { $env:PATH = $oldPath }
 }
 
-function Invoke-FleetInstall([string]$RepositoryRoot, [string]$Destination) {
-    $RepositoryRoot = Get-FullPath $RepositoryRoot
-    if (-not $Destination) {
-        $Destination = 'C:\ao'
-        $settingsPath = Join-Path $RepositoryRoot 'scripts\install-fleet.local.json'
-        if (Test-Path -LiteralPath $settingsPath) {
-            $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
-            if ($settings.PSObject.Properties['installDir']) { $Destination = [string]$settings.installDir }
+function Resolve-FleetInstallDirectory([string]$RepositoryRoot, [string]$Destination) {
+    if (-not [string]::IsNullOrWhiteSpace($Destination)) { return Get-FullPath $Destination }
+    $settingsPath = Join-Path $RepositoryRoot 'scripts\install-fleet.local.json'
+    if (Test-Path -LiteralPath $settingsPath) {
+        $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+        if ($settings.PSObject.Properties['installDir'] -and
+            -not [string]::IsNullOrWhiteSpace([string]$settings.installDir)) {
+            return Get-FullPath ([string]$settings.installDir)
         }
     }
-    $Destination = Get-FullPath $Destination
+    $defaultDirectory = Get-FullPath $script:FleetDefaultInstallDir
+    # Older local configurations installed under C:\ao\Fleet beside C:\ao\data.
+    # Reuse only a marked child installation; never adopt/replace its parent.
+    if (-not (Test-Path -LiteralPath (Join-Path $defaultDirectory $script:FleetMarker))) {
+        $nestedDirectory = Join-Path $defaultDirectory 'Fleet'
+        $nestedMarker = Join-Path $nestedDirectory $script:FleetMarker
+        if (Test-Path -LiteralPath $nestedMarker -PathType Leaf) {
+            try {
+                $marker = Get-Content -LiteralPath $nestedMarker -Raw | ConvertFrom-Json
+                if ($marker.kind -eq 'ao-fleet-local-install') { return $nestedDirectory }
+            } catch { } # An invalid/foreign marker must not authorize replacement.
+        }
+    }
+    return $defaultDirectory
+}
+
+function Invoke-FleetInstall([string]$RepositoryRoot, [string]$Destination) {
+    $RepositoryRoot = Get-FullPath $RepositoryRoot
+    $Destination = Resolve-FleetInstallDirectory $RepositoryRoot $Destination
     $branch = & git -C $RepositoryRoot branch --show-current
     if ($LASTEXITCODE -ne 0 -or $branch -ne 'main-fleet') { throw 'Run this script from the main-fleet checkout; it contains all integrated Fleet features.' }
     Assert-FleetDestination $Destination $RepositoryRoot

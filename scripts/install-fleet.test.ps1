@@ -39,6 +39,7 @@ $originalUserPath = ${function:Get-FleetUserPath}
 $originalMachinePath = ${function:Get-FleetMachinePath}
 $originalSetUserPath = ${function:Set-FleetUserPath}
 $originalBroadcast = ${function:Send-FleetEnvironmentChange}
+$originalDefaultInstallDir = $script:FleetDefaultInstallDir
 try {
     foreach ($directory in @($source, $desktop, $repository)) { [void][IO.Directory]::CreateDirectory($directory) }
     foreach ($file in $script:FleetFiles) {
@@ -183,6 +184,35 @@ try {
     Assert ((Get-Content -LiteralPath (Join-Path $destination 'fleet.exe')) -eq 'version two') 'Failed build changed the installation.'
     [void][IO.Directory]::CreateDirectory((Join-Path $repository 'scripts'))
     $localConfig = Join-Path $repository 'scripts\install-fleet.local.json'
+    Assert ($script:FleetDefaultInstallDir -eq 'C:\ao') 'The built-in default must be C:\ao.'
+    $script:FleetDefaultInstallDir = Join-Path $testRoot 'default ao'
+    Assert ((Resolve-FleetInstallDirectory $repository '') -eq $script:FleetDefaultInstallDir) 'Missing JSON must use the built-in default.'
+    $nestedInstall = Join-Path $script:FleetDefaultInstallDir 'Fleet'
+    $savedData = Join-Path $script:FleetDefaultInstallDir 'data\keep.txt'
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $savedData))
+    Set-Content -LiteralPath $savedData -Value 'existing data'
+    Install-FleetPackage $source $nestedInstall $repository $desktop
+    @{ installDir = $nestedInstall } | ConvertTo-Json | Set-Content -LiteralPath $localConfig
+    Remove-Item -LiteralPath $localConfig
+    Assert ((Resolve-FleetInstallDirectory $repository '') -eq $nestedInstall) 'Deleting JSON must retain the existing managed Fleet child.'
+    Must-Fail { Invoke-FleetInstall $repository '' } 'simulated build failure'
+    Install-FleetPackage $source (Resolve-FleetInstallDirectory $repository '') $repository $desktop
+    Assert ((Get-Content -LiteralPath $savedData) -eq 'existing data') 'Nested update changed sibling data.'
+    Must-Fail { Invoke-FleetInstall $repository $script:FleetDefaultInstallDir } 'unmanaged directory'
+    @{ installDir = $script:FleetDefaultInstallDir } | ConvertTo-Json | Set-Content -LiteralPath $localConfig
+    Must-Fail { Invoke-FleetInstall $repository '' } 'unmanaged directory'
+    @{ installDir = '' } | ConvertTo-Json | Set-Content -LiteralPath $localConfig
+    Assert ((Resolve-FleetInstallDirectory $repository '') -eq $nestedInstall) 'Empty installDir must use the default lookup.'
+    $nestedMarker = Join-Path $nestedInstall $script:FleetMarker
+    foreach ($badMarker in @('not json', '{}', '{"kind":"another-app"}')) {
+        Set-Content -LiteralPath $nestedMarker -Value $badMarker
+        Must-Fail { Invoke-FleetInstall $repository '' } 'unmanaged directory'
+    }
+    @{ kind = 'ao-fleet-local-install' } | ConvertTo-Json | Set-Content -LiteralPath $nestedMarker
+    @{ kind = 'ao-fleet-local-install' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $script:FleetDefaultInstallDir $script:FleetMarker)
+    Assert ((Resolve-FleetInstallDirectory $repository '') -eq $script:FleetDefaultInstallDir) 'A directly managed default installation must take precedence.'
+    $script:FleetDefaultInstallDir = $originalDefaultInstallDir
+    Write-Host 'PASS: built-in default, deleted/empty JSON, existing Fleet child, sibling data preservation and invalid marker refusal'
     @{ installDir = $foreign } | ConvertTo-Json | Set-Content -LiteralPath $localConfig
     Must-Fail { Invoke-FleetInstall $repository '' } 'unmanaged directory'
     @{ installDir = $destination } | ConvertTo-Json | Set-Content -LiteralPath $localConfig
@@ -202,6 +232,7 @@ try {
     ${function:Get-FleetMachinePath} = $originalMachinePath
     ${function:Set-FleetUserPath} = $originalSetUserPath
     ${function:Send-FleetEnvironmentChange} = $originalBroadcast
+    $script:FleetDefaultInstallDir = $originalDefaultInstallDir
     if ($null -ne $process -and -not $process.HasExited) { Stop-Process -Id $process.Id; $process.WaitForExit() }
     if (Test-Path -LiteralPath $junction) { [IO.Directory]::Delete($junction) }
     $resolved = Get-FullPath $testRoot
