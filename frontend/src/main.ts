@@ -7,6 +7,7 @@ import { initializeDesktopLog } from "./main/desktop-log";
 import { syncMacWindowButtons } from "./main/window-chrome";
 import { MAC_TRAFFIC_LIGHT_ROW_HEIGHT, MAC_WINDOW_BUTTON_X, MAC_WINDOW_BUTTON_RADIUS } from "./shared/window-chrome";
 import { fleetRuntime, resolveDesktopDaemonLaunch as resolveDaemonLaunch } from "./main/fleet-bootstrap";
+import { stopFleetProcesses } from "./main/fleet-quit";
 import fleetProfile from "../fork-fleet/profile.json";
 import { finishUpdateQuit } from "./main/update-quit";
 import { acknowledgeMacUpdateRestart } from "./main/mac-update-progress";
@@ -477,6 +478,7 @@ let preserveAgentsOnQuit = false;
 let agentQuitCleanupComplete = false;
 let agentQuitCleanupPromise: Promise<void> | null = null;
 let desktopAgentShutdownAccepted = false;
+let fleetQuitInProgress = false;
 let createWindowPromise: Promise<void> | null = null;
 const desktopQuit = createDesktopQuitController({
 	platform: process.platform,
@@ -1241,6 +1243,7 @@ async function createWindowInternal(): Promise<void> {
 	});
 
 	mainWindow.on("close", (event) => {
+		if (fleetQuitInProgress) { event.preventDefault(); return; }
 		const preventClose = shouldPreventUnsafeChatDraftClose(
 			chatDraftRisks,
 			chatDraftQuitConfirmed || chatDraftWindowCloseConfirmed,
@@ -2181,6 +2184,7 @@ async function gracefullyReplaceDaemonForBrowser(status: DaemonStatus): Promise<
 }
 
 async function refreshDaemonStatus(): Promise<DaemonStatus> {
+	if (fleetQuitInProgress) return daemonStatus;
 	if (daemonProcess) {
 		return daemonStatus;
 	}
@@ -2215,6 +2219,7 @@ async function refreshDaemonStatus(): Promise<DaemonStatus> {
 
 // keepAlive carries a failed launch's captured keep-alive choice into its retry.
 async function startDaemon(options: { forceReplaceAdopted?: boolean; autoRestartIntent?: DaemonAutoRestartIntent; trigger?: DaemonStartTrigger; keepAlive?: boolean } = {}): Promise<DaemonStatus> {
+	if (fleetQuitInProgress) return daemonStatus;
 	if (!options.autoRestartIntent && daemonStartAutoRestartIntent) {
 		daemonStartEpoch += 1;
 		daemonStartPromise = null;
@@ -2829,6 +2834,7 @@ async function startDaemonInner(startEpoch: number, autoRestartIntent: DaemonAut
 		});
 		if (daemonProcess !== child) return;
 		daemonProcess = null;
+		if (fleetQuitInProgress) { daemonStoppingProcess = null; return; }
 		// An explicit stopDaemon() already set a clean `{ state: "stopped" }`.
 		// daemon-telemetry reports any status carrying a `code` as
 		// ao.renderer.daemon_failure, so don't stamp `code: "exited"` on a stop
@@ -3055,6 +3061,7 @@ async function shutdownDaemonForDesktopQuit(): Promise<void> {
 }
 
 function stopDaemon(): DaemonStatus {
+	if (fleetQuitInProgress) return daemonStatus;
 	daemonStartEpoch += 1;
 	daemonStartPromise = null;
 	daemonStartAutoRestartIntent = undefined;
@@ -3100,6 +3107,7 @@ async function startDaemonForRestart(autoRestartIntent?: DaemonAutoRestartIntent
 }
 
 async function restartDaemon(): Promise<DaemonStatus> {
+	if (fleetQuitInProgress) return daemonStatus;
 	daemonAutoRestartStandDown = false;
 	// A manual restart supersedes any pending automatic respawn.
 	cancelDaemonAutoRestart();
@@ -3182,6 +3190,32 @@ registerCliShadowIpc({
 	appImage: process.env.APPIMAGE,
 	reveal: (filePath) => shell.showItemInFolder(filePath),
 });
+
+async function fullyQuitFleet(): Promise<void> {
+	if (fleetQuitInProgress) return;
+	if (chatDraftRisks.length > 0 && !chatDraftQuitConfirmed && !confirmUnsafeChatDraftLeave(
+		chatDraftRisks, (options) => dialog.showMessageBoxSync(options), chatDraftDialog,
+	)) throw new Error("Fleet shutdown was cancelled; unsaved drafts were kept.");
+	fleetQuitInProgress = true;
+	try {
+		// A launch already in flight must settle before inspecting ownership.
+		await daemonStartPromise;
+		const launch = resolveDaemonLaunch(daemonLaunchEnv(), app.isPackaged, process.resourcesPath, app.getAppPath(), os.homedir(), process.platform);
+		const handshakePath = runFilePath();
+		if (!launch || !handshakePath) throw new Error("Cannot resolve this Fleet installation.");
+		daemonRestartAfterExitProcess = null;
+		daemonStoppingProcess = daemonProcess;
+		await stopFleetProcesses(launch, daemonEnv(), handshakePath, daemonProcess?.pid);
+		supervisorLink?.dispose();
+		supervisorLink = null;
+		disposeBrowserRuntimeLink();
+		await disposeAllBrowserViewHosts();
+		chatDraftQuitConfirmed = true;
+	} finally {
+		fleetQuitInProgress = false;
+	}
+	app.quit();
+}
 
 ipcMain.handle("daemon:getStatus", () => refreshDaemonStatus());
 ipcMain.handle("daemon:start", () => {
@@ -3517,6 +3551,11 @@ ipcMain.on(SET_CHAT_DRAFT_RISK_CHANNEL, (event, risks: unknown, dialogCopy: unkn
 // action the native default menu would have performed.
 ipcMain.handle("menu:action", (event, action: string) => {
 	if (event.sender !== getShellWebContents()) return;
+	if (action === "fleet.quit") {
+		if (!fleetRuntime || process.platform !== "win32") throw new Error("Fleet shutdown is unavailable.");
+		return fullyQuitFleet();
+	}
+	if (fleetQuitInProgress) return;
 	const win = mainWindow;
 	if (!win) return;
 	// Clicking this shell-painted menu moves focus off the panel, so prefer the last-focused panel, else the focused contents, else the shell.
@@ -4837,6 +4876,7 @@ setUpdateRestartFailureHandler(() => {
 
 let updateQuitDeadlineArmed = false;
 app.on("before-quit", (event) => {
+	if (fleetQuitInProgress) { event.preventDefault(); return; }
 	if (desktopQuit.handleBeforeQuit(event)) return;
 	if (chatDraftRisks.length > 0 && !chatDraftQuitConfirmed) {
 		event.preventDefault();

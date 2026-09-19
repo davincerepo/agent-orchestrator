@@ -11,6 +11,8 @@ import {
   X,
 } from "@/components/app-icons";
 import { useEffect, useState } from "react";
+import { isFleetPortable } from "../../shared/desktop-flavor";
+import { FleetQuitDialog } from "./FleetQuitDialog";
 import { sidebarIsVisible, useUiStore } from "../stores/ui-store";
 import { useCanGoForward } from "./TitlebarNav";
 import {
@@ -36,7 +38,7 @@ const isWindows =
       "",
   );
 
-type MenuKey = "view" | "help";
+type MenuKey = "fleet" | "view" | "help";
 
 // Dispatch a native-menu action to the main process (see menu:action in main.ts).
 const act = (action: string) => () => {
@@ -141,6 +143,7 @@ function WindowControls({
 }
 
 export function WindowTitlebar({ onBack }: { onBack?: () => void }) {
+	const [fleetQuitOpen, setFleetQuitOpen] = useState(false);
   const { t } = useTranslation();
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const isSidebarOpen = useUiStore(sidebarIsVisible);
@@ -258,6 +261,11 @@ export function WindowTitlebar({ onBack }: { onBack?: () => void }) {
         <TooltipContent shortcut="history-forward" side="bottom">{t("titlebar.goForward")}</TooltipContent>
       </Tooltip>
       <nav className="window-titlebar__menus">
+        {isFleetPortable && <TopMenu id="fleet" label="Fleet" openMenu={openMenu} setOpenMenu={setOpenMenu}>
+          <DropdownMenuItem onSelect={act("window.close")}>{t("fleet.closeWindow")}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => setFleetQuitOpen(true)}>{t("fleet.quitMenu")}</DropdownMenuItem>
+        </TopMenu>}
         <TopMenu
           id="view"
           label={t("titlebar.view")}
@@ -311,6 +319,7 @@ export function WindowTitlebar({ onBack }: { onBack?: () => void }) {
       </nav>
       <div className="window-titlebar__spacer" />
       <WindowControls isMaximized={isMaximized} t={t} />
+      {isFleetPortable && <FleetQuitDialog open={fleetQuitOpen} onOpenChange={setFleetQuitOpen} />}
     </header>
   );
 }

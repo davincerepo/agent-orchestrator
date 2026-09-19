@@ -385,13 +385,21 @@ func atMostOneArg(cmd *cobra.Command, args []string) error {
 }
 
 func newDaemonCommand() *cobra.Command {
-	return &cobra.Command{
+	var stopBackground bool
+	cmd := &cobra.Command{
 		Use:    "daemon",
 		Short:  "Run the Orchestrator backend daemon",
 		Hidden: true,
 		Args:   noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if desktopFlavor == "fleet-portable" {
+				return daemon.RunFleet(cmd.Context(), stopBackground, Version)
+			}
 			return daemon.Run(Version)
 		},
 	}
+	if desktopFlavor == "fleet-portable" {
+		cmd.Flags().BoolVar(&stopBackground, "stop-background", false, "Stop this Fleet instance's background hosts after its daemon exits")
+	}
+	return cmd
 }
