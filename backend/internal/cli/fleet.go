@@ -60,6 +60,8 @@ func fleetCLIEnvironment(home string, getenv func(string) string) (map[string]st
 		return nil, fmt.Errorf("AO_FLEET_PORT must be 1-65535 and different from AO's 3001/3002 ports")
 	}
 	return map[string]string{
+		"AO_FLEET_HOME":          root,
+		"AO_FLEET_PORT":          strconv.Itoa(port),
 		"AO_DATA_DIR":            filepath.Join(root, "data"),
 		"AO_RUN_FILE":            filepath.Join(root, "running.json"),
 		"AO_PORT":                strconv.Itoa(port),
