@@ -121,6 +121,9 @@ func TestFleetCLIStartDoesNotUseOfficialMarkerOrDownload(t *testing.T) {
 }
 
 func TestFleetCLIStartUsesAdjacentDesktop(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Fleet portable is Windows-only")
+	}
 	root := t.TempDir()
 	app := filepath.Join(root, "fleet.exe")
 	if err := os.WriteFile(app, []byte("fixture"), 0600); err != nil {
