@@ -1,4 +1,11 @@
 {
+	"fleet.closeWindow": "Close Window",
+	"fleet.quitMenu": "Quit Completely…",
+	"fleet.quitTitle": "Quit Fleet completely?",
+	"fleet.quitDescription": "Stop agents and terminals in every project in this Fleet instance, then exit. Running work will be interrupted. Session history and working directories will be kept.",
+	"fleet.quitConfirm": "Stop Background Processes and Quit",
+	"fleet.quitting": "Stopping Fleet and its background processes. This may take a minute…",
+	"fleet.quitFailed": "Fleet could not stop all background processes. The window will stay open. You can retry, or close this dialog and restart Fleet to continue working.",
 	"activity.active": "Working",
 	"activity.blocked": "Awaiting Decision",
 	"activity.exited": "Exited",

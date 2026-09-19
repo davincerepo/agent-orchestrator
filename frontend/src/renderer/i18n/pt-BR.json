@@ -1,4 +1,11 @@
 {
+	"fleet.closeWindow": "Fechar janela",
+	"fleet.quitMenu": "Sair completamente…",
+	"fleet.quitTitle": "Sair completamente do Fleet?",
+	"fleet.quitDescription": "Interrompe os agentes e terminais de todos os projetos desta instância do Fleet e encerra o aplicativo. O trabalho em andamento será interrompido. O histórico das sessões e os diretórios de trabalho serão preservados.",
+	"fleet.quitConfirm": "Parar processos em segundo plano e sair",
+	"fleet.quitting": "Parando o Fleet e seus processos em segundo plano. Isso pode levar um minuto…",
+	"fleet.quitFailed": "Não foi possível parar todos os processos em segundo plano. A janela continuará aberta. Tente novamente ou feche esta caixa de diálogo e reinicie o Fleet para continuar.",
 	"activity.active": "Em andamento",
 	"activity.blocked": "Aguardando decisão",
 	"activity.exited": "Encerrado",

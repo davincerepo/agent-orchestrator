@@ -1,4 +1,11 @@
 {
+	"fleet.closeWindow": "关闭窗口",
+	"fleet.quitMenu": "完全退出…",
+	"fleet.quitTitle": "完全退出 Fleet？",
+	"fleet.quitDescription": "停止当前 Fleet 实例中所有项目的 agent 和终端，然后退出。正在运行的任务会被中断，会话历史和工作目录会保留。",
+	"fleet.quitConfirm": "停止后台并退出",
+	"fleet.quitting": "正在停止 Fleet 及其后台进程，可能需要一分钟…",
+	"fleet.quitFailed": "未能停止所有后台进程，窗口将保持打开。可以重试，或关闭此对话框后重新启动 Fleet 继续工作。",
 	"activity.active": "工作中",
 	"activity.blocked": "等待决策",
 	"activity.exited": "已退出",

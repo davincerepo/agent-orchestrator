@@ -1,4 +1,11 @@
 {
+	"fleet.closeWindow": "Fermer la fenêtre",
+	"fleet.quitMenu": "Quitter complètement…",
+	"fleet.quitTitle": "Quitter Fleet complètement ?",
+	"fleet.quitDescription": "Arrête les agents et terminaux de tous les projets de cette instance de Fleet, puis quitte. Le travail en cours sera interrompu. L’historique des sessions et les répertoires de travail seront conservés.",
+	"fleet.quitConfirm": "Arrêter les processus en arrière-plan et quitter",
+	"fleet.quitting": "Arrêt de Fleet et de ses processus en arrière-plan. Cela peut prendre une minute…",
+	"fleet.quitFailed": "Certains processus en arrière-plan n’ont pas pu être arrêtés. La fenêtre reste ouverte. Réessayez ou fermez cette boîte de dialogue et redémarrez Fleet pour continuer.",
 	"activity.active": "En cours",
 	"activity.blocked": "En attente de décision",
 	"activity.exited": "Terminé",

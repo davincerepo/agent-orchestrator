@@ -135,7 +135,13 @@ Cloud 登录复用现有的 `http://127.0.0.1:3000/callback` 回环 OAuth 路径
 - `frontend/scripts/smoke-fleet.mjs`：对真实打包产物执行临时用户目录测试。
 - `scripts/install-fleet.{cmd,ps1}`：从集成分支重新打包、替换固定安装目录并修复桌面快捷方式；`install-fleet.test.ps1` 验证安装边界。
 
-这是一项独立的桌面分发功能，与 Windows Codex 账号存储修复、CI 编译配置分别提交。不改 Go 后端或 API。未来 rebase 时重点检查：新增的硬编码 `.ao` 路径、Electron 初始化顺序、daemon 环境覆盖顺序、自动更新入口，以及 Forge hooks/资源列表变化。配置覆盖层和独立脚本尽量复用上游机制。
+这是一项独立的桌面分发功能，与 Windows Codex 账号存储修复、CI 编译配置分别提交。未来 rebase 时重点检查：新增的硬编码 `.ao` 路径、Electron 初始化顺序、daemon 环境覆盖顺序、自动更新入口，以及 Forge hooks/资源列表变化。配置覆盖层和独立脚本尽量复用上游机制。
+
+## 完全退出（Windows）
+
+顶部 `Fleet → 完全退出…` 经确认后，先通过 loopback API 停止当前实例的 daemon 并等待进程退出，再由随包 daemon 的 `--stop-background` 模式停止该数据目录登记的 chat-host、provider 和终端，最后退出桌面。保留会话历史和工作目录；普通关闭窗口仍保留后台会话。失败时保留窗口并允许重试，不按进程名称批量结束进程。
+
+后台清理由 `backend/internal/daemon/fleet_windows.go` 负责，与正常 Fleet daemon 共用 OS 文件锁，防止清理期间重新启动。桌面接入在 `frontend/src/main/fleet-quit.ts` 和 `FleetQuitDialog.tsx`；普通 AO 构建不提供此入口。
 
 原有品牌展示组件及 8 个语言文件的改动已撤回。Forge 直接沿用上游 hooks，不再重复写更新元数据；构建脚本仍将 `AO_RELEASE_REPO` 指向 fork。保留所有数据、进程和更新隔离检查以及对应的测试。
 

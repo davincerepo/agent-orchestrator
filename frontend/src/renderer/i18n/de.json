@@ -1,4 +1,11 @@
 {
+	"fleet.closeWindow": "Fenster schließen",
+	"fleet.quitMenu": "Vollständig beenden…",
+	"fleet.quitTitle": "Fleet vollständig beenden?",
+	"fleet.quitDescription": "Beendet die Agenten und Terminals aller Projekte dieser Fleet-Instanz und schließt die App. Laufende Arbeiten werden unterbrochen. Sitzungsverlauf und Arbeitsverzeichnisse bleiben erhalten.",
+	"fleet.quitConfirm": "Hintergrundprozesse stoppen und beenden",
+	"fleet.quitting": "Fleet und seine Hintergrundprozesse werden beendet. Dies kann eine Minute dauern…",
+	"fleet.quitFailed": "Nicht alle Hintergrundprozesse konnten beendet werden. Das Fenster bleibt geöffnet. Versuche es erneut oder schließe diesen Dialog und starte Fleet neu, um weiterzuarbeiten.",
 	"activity.active": "In Arbeit",
 	"activity.blocked": "Entscheidung ausstehend",
 	"activity.exited": "Beendet",

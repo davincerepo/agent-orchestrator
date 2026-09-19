@@ -1,4 +1,5 @@
 import { fleetRuntime, resolveDesktopDaemonLaunch as resolveDaemonLaunch } from "./main/fleet-bootstrap";
+import { stopFleetProcesses } from "./main/fleet-quit";
 import fleetProfile from "../fork-fleet/profile.json";
 import { finishUpdateQuit } from "./main/update-quit";
 import { acknowledgeMacUpdateRestart } from "./main/mac-update-progress";
@@ -300,6 +301,7 @@ const browserCleanupPromises = new Set<Promise<void>>();
 let browserQuitCleanupPromise: Promise<void> | null = null;
 let browserCleanupComplete = false;
 let browserQuitRequested = false;
+let fleetQuitInProgress = false;
 let createWindowPromise: Promise<void> | null = null;
 let browserRuntimeLink: BrowserRuntimeLinkHandle | null = null;
 let browserRuntimeLinkIdentity: BrowserRuntimeIdentity | null = null;
@@ -674,6 +676,7 @@ async function createWindowInternal(): Promise<void> {
 	});
 
 	mainWindow.on("close", (event) => {
+		if (fleetQuitInProgress) { event.preventDefault(); return; }
 		const preventClose = shouldPreventUnsafeChatDraftClose(
 			chatDraftRisks,
 			chatDraftQuitConfirmed || chatDraftWindowCloseConfirmed,
@@ -1321,6 +1324,7 @@ async function gracefullyReplaceDaemonForBrowser(status: DaemonStatus): Promise<
 }
 
 async function refreshDaemonStatus(): Promise<DaemonStatus> {
+	if (fleetQuitInProgress) return daemonStatus;
 	if (daemonProcess) {
 		return daemonStatus;
 	}
@@ -1353,6 +1357,7 @@ async function refreshDaemonStatus(): Promise<DaemonStatus> {
 }
 
 async function startDaemon(): Promise<DaemonStatus> {
+	if (fleetQuitInProgress) return daemonStatus;
 	if (daemonStartPromise) {
 		return daemonStartPromise;
 	}
@@ -1801,6 +1806,7 @@ async function startDaemonInner(startEpoch: number): Promise<DaemonStatus> {
 		stopDiscovery();
 		if (daemonProcess !== child) return;
 		daemonProcess = null;
+		if (fleetQuitInProgress) { daemonStoppingProcess = null; return; }
 		// An explicit stopDaemon() already set a clean `{ state: "stopped" }`.
 		// daemon-telemetry reports any status carrying a `code` as
 		// ao.renderer.daemon_failure, so don't stamp `code: "exited"` on a stop
@@ -1843,6 +1849,7 @@ function killDaemon(child: ChildProcess): void {
 }
 
 function stopDaemon(): DaemonStatus {
+	if (fleetQuitInProgress) return daemonStatus;
 	daemonStartEpoch += 1;
 	daemonStartPromise = null;
 	// An explicit stop (or a newer restart request) cancels any deferred restart
@@ -1884,6 +1891,7 @@ async function startDaemonForRestart(): Promise<DaemonStatus> {
 }
 
 async function restartDaemon(): Promise<DaemonStatus> {
+	if (fleetQuitInProgress) return daemonStatus;
 	const child = daemonProcess;
 	if (!child) return startDaemonForRestart();
 
@@ -1919,6 +1927,32 @@ async function restartDaemon(): Promise<DaemonStatus> {
 		return daemonStatus;
 	}
 	return startDaemonForRestart();
+}
+
+async function fullyQuitFleet(): Promise<void> {
+	if (fleetQuitInProgress) return;
+	if (chatDraftRisks.length > 0 && !chatDraftQuitConfirmed && !confirmUnsafeChatDraftLeave(
+		chatDraftRisks, (options) => dialog.showMessageBoxSync(options), chatDraftDialog,
+	)) throw new Error("Fleet shutdown was cancelled; unsaved drafts were kept.");
+	fleetQuitInProgress = true;
+	try {
+		// A launch already in flight must settle before inspecting ownership.
+		await daemonStartPromise;
+		const launch = resolveDaemonLaunch(daemonLaunchEnv(), app.isPackaged, process.resourcesPath, app.getAppPath(), os.homedir(), process.platform);
+		const handshakePath = runFilePath();
+		if (!launch || !handshakePath) throw new Error("Cannot resolve this Fleet installation.");
+		daemonRestartAfterExitProcess = null;
+		daemonStoppingProcess = daemonProcess;
+		await stopFleetProcesses(launch, daemonEnv(), handshakePath, daemonProcess?.pid);
+		supervisorLink?.dispose();
+		supervisorLink = null;
+		disposeBrowserRuntimeLink();
+		await disposeAllBrowserViewHosts();
+		chatDraftQuitConfirmed = true;
+	} finally {
+		fleetQuitInProgress = false;
+	}
+	app.quit();
 }
 
 ipcMain.handle("daemon:getStatus", () => refreshDaemonStatus());
@@ -2007,7 +2041,12 @@ ipcMain.on(SET_CHAT_DRAFT_RISK_CHANNEL, (event, risks: unknown, dialogCopy: unkn
 
 // Backs the custom title-bar menu (WindowTitlebar). Each item maps to the same
 // action the native default menu would have performed.
-ipcMain.handle("menu:action", (_event, action: string) => {
+ipcMain.handle("menu:action", (event, action: string) => {
+	if (action === "fleet.quit") {
+		if (event.sender !== getShellWebContents() || !fleetRuntime || process.platform !== "win32") throw new Error("Fleet shutdown is unavailable.");
+		return fullyQuitFleet();
+	}
+	if (fleetQuitInProgress) return;
 	const win = mainWindow;
 	if (!win) return;
 	// Clicking this shell-painted menu moves focus off the panel, so prefer the last-focused panel, else the focused contents, else the shell.
@@ -2771,6 +2810,7 @@ setUpdateRestartFailureHandler(() => {
 
 let updateQuitDeadlineArmed = false;
 app.on("before-quit", (event) => {
+	if (fleetQuitInProgress) { event.preventDefault(); return; }
 	if (chatDraftRisks.length > 0 && !chatDraftQuitConfirmed) {
 		event.preventDefault();
 		if (confirmUnsafeChatDraftLeave(

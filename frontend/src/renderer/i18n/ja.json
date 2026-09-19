@@ -1,4 +1,11 @@
 {
+	"fleet.closeWindow": "ウィンドウを閉じる",
+	"fleet.quitMenu": "完全に終了…",
+	"fleet.quitTitle": "Fleet を完全に終了しますか？",
+	"fleet.quitDescription": "この Fleet インスタンスの全プロジェクトのエージェントとターミナルを停止して終了します。実行中の作業は中断されます。セッション履歴と作業ディレクトリは保持されます。",
+	"fleet.quitConfirm": "バックグラウンド処理を停止して終了",
+	"fleet.quitting": "Fleet とバックグラウンドプロセスを停止しています。しばらくお待ちください…",
+	"fleet.quitFailed": "一部のバックグラウンドプロセスを停止できませんでした。ウィンドウは開いたままです。再試行するか、このダイアログを閉じて Fleet を再起動してください。",
 	"activity.active": "作業中",
 	"activity.blocked": "判断待ち",
 	"activity.exited": "終了済み",
