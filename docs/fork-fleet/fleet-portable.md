@@ -54,6 +54,8 @@ frontend/out/
 
 在 **`main-fleet` 工作副本**中双击 `scripts/install-fleet.cmd`。默认安装到 `C:\ao`，安装后桌面的 **AO Fleet** 快捷方式直接启动 `C:\ao\fleet.exe`，工作目录和图标也指向该目录；每次安装都会重新创建这个快捷方式，修复目标错误、参数残留、损坏或被删除的情况。通过 Windows 获取当前用户的实际桌面目录，支持 OneDrive/重定向桌面，不修改其他快捷方式。
 
+未配置安装路径时，默认值 `C:\ao` 写在脚本中；若此前已安装到带管理标记的 `C:\ao\Fleet`，删除本地 JSON 后会自动沿用该目录，保留旁边的 `C:\ao\data`。命令行和 JSON 中显式指定的路径仍优先。
+
 流程：检查分支、目标目录、运行进程和命令行冲突 → `npm ci` 准备 product-ui/frontend 依赖 → 调用现有 `package-fleet.mjs` 重新打包 → 验证包内 CLI 的 Fleet 构建标记 → 复制本次 `frontend/out/Fleet-win32-x64` 目录到临时目录 → 再次检查运行进程 → 替换目标目录 → 修复快捷方式 → 注册默认 `ao` 命令。不会根据 ZIP 文件时间挑选旧包，不自动拉取代码、切换分支或启动应用；未提交的源码修改也会参与构建。构建失败不改变已安装程序和 PATH。
 
 安装成功后，`resources/daemon` 位于当前用户 PATH 首位，原 AO 默认安装目录的 CLI 条目及旧的受管 Fleet CLI 条目会从用户 PATH 中移除，其他工具条目和官方程序文件保留。脚本更新自身进程的 PATH，并向 Windows 广播环境变化；其他已打开的终端仍须重新打开，长期运行的 IDE 可能需要重启。若系统级 PATH 中已有其他 `ao`，脚本在构建前报出冲突，不修改系统级环境；先移除该系统级 AO PATH 条目再安装。PowerShell 中手工定义的 `ao` alias/function 不属于 PATH，需自行移除。
