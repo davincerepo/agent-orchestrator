@@ -16,6 +16,8 @@ describe("Fleet isolation", () => {
 		expect(runtime.env.AO_DATA_DIR).toBe(path.join(runtime.root, "data"));
 		expect(runtime.env.AO_RUN_FILE).toBe(path.join(runtime.root, "running.json"));
 		expect(runtime.env.AO_PORT).toBe("13001");
+		expect(runtime.env.AO_FLEET_HOME).toBe(runtime.root);
+		expect(runtime.env.AO_FLEET_PORT).toBe("13001");
 		expect(runtime.env.AO_DAEMON_COMMAND).toBe("");
 		expect(runtime.env.AO_CLOUD_AUTH_REDIRECT).toBe("http://127.0.0.1:3000/callback");
 		for (const p of [runtime.electronDir, runtime.browserDir, runtime.logPath]) {
@@ -27,6 +29,8 @@ describe("Fleet isolation", () => {
 		const runtime = resolveFleetRuntime(home, { AO_FLEET_HOME: root, AO_FLEET_PORT: "13002" });
 		expect(runtime.root).toBe(root);
 		expect(runtime.env.AO_PORT).toBe("13002");
+		expect(runtime.env.AO_FLEET_HOME).toBe(root);
+		expect(runtime.env.AO_FLEET_PORT).toBe("13002");
 	});
 	it.each(["", "data", "electron", "dev", "fleet/../data"])("rejects official AO state: %s", (suffix) => {
 		expect(() => resolveFleetRuntime(home, { AO_FLEET_HOME: path.join(home, ".ao", suffix) })).toThrow("official AO");

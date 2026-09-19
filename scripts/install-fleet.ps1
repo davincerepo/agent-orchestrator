@@ -101,6 +101,88 @@ function Repair-FleetShortcut([string]$Directory, [string]$DesktopDirectory) {
     }
 }
 
+# Separate the registry side effects so the installer smoke test can exercise
+# real PATH selection without changing the user's persistent environment.
+function Get-FleetUserPath { return [Environment]::GetEnvironmentVariable('Path', 'User') }
+function Get-FleetMachinePath { return [Environment]::GetEnvironmentVariable('Path', 'Machine') }
+function Set-FleetUserPath([string]$Value) { [Environment]::SetEnvironmentVariable('Path', $Value, 'User') }
+
+function Send-FleetEnvironmentChange {
+    if (-not ('FleetInstall.EnvironmentBroadcast' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace FleetInstall {
+    public static class EnvironmentBroadcast {
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
+    }
+}
+'@
+    }
+    $result = [UIntPtr]::Zero
+    [void][FleetInstall.EnvironmentBroadcast]::SendMessageTimeout([IntPtr]0xffff, 0x1a, [IntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)
+}
+
+function Get-FleetCommandPath([string]$Directory, [string]$CurrentPath) {
+    $cliDirectory = Get-FullPath (Join-Path $Directory 'resources\daemon')
+    $officialDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\agent-orchestrator\resources\daemon'
+    $entries = [Collections.Generic.List[string]]::new()
+    $entries.Add($cliDirectory)
+    foreach ($entry in ($CurrentPath -split ';')) {
+        if (-not $entry.Trim()) { continue }
+        $expanded = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"')).TrimEnd('\', '/')
+        if ($expanded.Equals($cliDirectory, [StringComparison]::OrdinalIgnoreCase) -or
+            $expanded.Equals($officialDirectory, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        # Remove an earlier managed Fleet CLI when the installation moves.
+        if ($expanded -match '[\\/]resources[\\/]daemon$') {
+            $marker = Join-Path (Split-Path -Parent (Split-Path -Parent $expanded)) $script:FleetMarker
+            if (Test-Path -LiteralPath $marker -PathType Leaf) {
+                try { if ((Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json).kind -eq 'ao-fleet-local-install') { continue } }
+                catch { } # A foreign/broken marker cannot authorize a PATH removal.
+            }
+        }
+        $entries.Add($entry)
+    }
+    return $entries -join ';'
+}
+
+function Assert-FleetCLIPathPriority([string]$Directory) {
+    $cliDirectory = Get-FullPath (Join-Path $Directory 'resources\daemon')
+    # Windows places Machine PATH before User PATH in newly opened processes.
+    foreach ($entry in ((Get-FleetMachinePath) -split ';')) {
+        $expanded = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"')).TrimEnd('\', '/')
+        if (-not $expanded -or $expanded.Equals($cliDirectory, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        foreach ($name in @('ao.exe', 'ao.cmd', 'ao.bat', 'ao.ps1')) {
+            if (Test-Path -LiteralPath (Join-Path $expanded $name) -PathType Leaf) {
+                throw "Machine PATH has an ao command before User PATH: $expanded. Remove that machine-level AO PATH entry before installing the Fleet CLI."
+            }
+        }
+    }
+}
+
+function Assert-FleetCLI([string]$Directory) {
+    $binary = Join-Path $Directory 'resources\daemon\ao.exe'
+    $version = & $binary version
+    if ($LASTEXITCODE -ne 0 -or "$version" -notmatch '^AO Fleet ') {
+        throw "The package CLI is not a Fleet build: $binary. Rebuild with package:fleet before installing."
+    }
+}
+
+function Register-FleetCLI([string]$Directory) {
+    Assert-FleetCLIPathPriority $Directory
+    Assert-FleetCLI $Directory
+    $oldPath = Get-FleetUserPath
+    $newPath = Get-FleetCommandPath $Directory $oldPath
+    if ($oldPath -cne $newPath) {
+        Set-FleetUserPath $newPath
+        Send-FleetEnvironmentChange
+    }
+    $env:PATH = Get-FleetCommandPath $Directory $env:PATH
+    Write-Host "Default ao command: $(Join-Path $Directory 'resources\daemon\ao.exe')"
+    Write-Host 'Open a new terminal to use Fleet from other applications; existing terminals retain their old PATH.'
+}
+
 function Install-FleetPackage([string]$Source, [string]$Destination, [string]$RepositoryRoot, [string]$DesktopDirectory) {
     $Source = Get-FullPath $Source
     $Destination = Get-FullPath $Destination
@@ -206,6 +288,7 @@ function Invoke-FleetInstall([string]$RepositoryRoot, [string]$Destination) {
     if ($LASTEXITCODE -ne 0 -or $branch -ne 'main-fleet') { throw 'Run this script from the main-fleet checkout; it contains all integrated Fleet features.' }
     Assert-FleetDestination $Destination $RepositoryRoot
     Assert-FleetStopped $Destination
+    Assert-FleetCLIPathPriority $Destination
     # Serialize installers targeting the same path, including different worktrees.
     $hash = [Security.Cryptography.SHA256]::Create()
     try { $key = [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Destination.ToLowerInvariant()))).Replace('-', '') }
@@ -217,7 +300,9 @@ function Invoke-FleetInstall([string]$RepositoryRoot, [string]$Destination) {
         if (-not $owned) { throw "Another Fleet installation is already in progress: $Destination" }
         Push-Location -LiteralPath $RepositoryRoot
         try { Invoke-FleetBuild $RepositoryRoot } finally { Pop-Location }
+        Assert-FleetCLI (Join-Path $RepositoryRoot 'frontend\out\Fleet-win32-x64')
         Install-FleetPackage (Join-Path $RepositoryRoot 'frontend\out\Fleet-win32-x64') $Destination $RepositoryRoot
+        Register-FleetCLI $Destination
     } finally {
         if ($owned) { $mutex.ReleaseMutex() }
         $mutex.Dispose()

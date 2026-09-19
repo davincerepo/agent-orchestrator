@@ -54,7 +54,11 @@ frontend/out/
 
 在 **`main-fleet` 工作副本**中双击 `scripts/install-fleet.cmd`。默认安装到 `C:\ao`，安装后桌面的 **AO Fleet** 快捷方式直接启动 `C:\ao\fleet.exe`，工作目录和图标也指向该目录；每次安装都会重新创建这个快捷方式，修复目标错误、参数残留、损坏或被删除的情况。通过 Windows 获取当前用户的实际桌面目录，支持 OneDrive/重定向桌面，不修改其他快捷方式。
 
-流程：检查分支、目标目录和运行进程 → `npm ci` 准备 product-ui/frontend 依赖 → 调用现有 `package-fleet.mjs` 重新打包 → 复制本次 `frontend/out/Fleet-win32-x64` 目录到临时目录 → 再次检查运行进程 → 替换目标目录 → 修复快捷方式。不会根据 ZIP 文件时间挑选旧包，不自动拉取代码、切换分支或启动应用；未提交的源码修改也会参与构建。构建失败不改变已安装程序。
+流程：检查分支、目标目录、运行进程和命令行冲突 → `npm ci` 准备 product-ui/frontend 依赖 → 调用现有 `package-fleet.mjs` 重新打包 → 验证包内 CLI 的 Fleet 构建标记 → 复制本次 `frontend/out/Fleet-win32-x64` 目录到临时目录 → 再次检查运行进程 → 替换目标目录 → 修复快捷方式 → 注册默认 `ao` 命令。不会根据 ZIP 文件时间挑选旧包，不自动拉取代码、切换分支或启动应用；未提交的源码修改也会参与构建。构建失败不改变已安装程序和 PATH。
+
+安装成功后，`resources/daemon` 位于当前用户 PATH 首位，原 AO 默认安装目录的 CLI 条目及旧的受管 Fleet CLI 条目会从用户 PATH 中移除，其他工具条目和官方程序文件保留。脚本更新自身进程的 PATH，并向 Windows 广播环境变化；其他已打开的终端仍须重新打开，长期运行的 IDE 可能需要重启。若系统级 PATH 中已有其他 `ao`，脚本在构建前报出冲突，不修改系统级环境；先移除该系统级 AO PATH 条目再安装。PowerShell 中手工定义的 `ao` alias/function 不属于 PATH，需自行移除。
+
+`ao version` 显示 `AO Fleet ...`。Fleet 包内的 `ao.exe` 通过构建标记自行固定数据目录、run-file 和端口，不依赖从 Desktop 继承环境。默认连接 `.ao/fleet` 和 `13001`；自定义实例继续使用 `AO_FLEET_HOME` / `AO_FLEET_PORT`，忽略继承的普通 `AO_DATA_DIR` / `AO_RUN_FILE` / `AO_PORT`。`ao start` 只打开同一安装包的 `fleet.exe`；文件缺失时报错，不扫描、下载或启动官方 AO。
 
 首次安装要求目标不存在或为空。脚本写入 `.fleet-install.json` 标记，只更新自己管理的目录，拒绝覆盖已有的无关目录、源码、默认/当前 `AO_FLEET_HOME` 数据目录及 junction/符号链接。自定义安装路径应专用于程序文件；不要把数据、项目或个人文件放入其中。升级完整替换程序目录，过时文件也会清理。临时旧目录仅用于切换失败时恢复，成功后删除，不积累历史版本。若清理因文件占用失败，会报告错误，保留临时目录以便处理。
 
@@ -78,7 +82,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-fleet.ps1 -I
 }
 ```
 
-Windows 安装脚本测试：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-fleet.test.ps1`。测试使用临时安装目录和临时桌面，验证首次安装、整包更新、快捷方式修复、占用拒绝、目录保护及构建失败，不接触真实桌面或 AO 数据。
+Windows 安装脚本测试：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-fleet.test.ps1`。测试使用临时安装目录、临时桌面和假的用户 PATH 存储，验证首次安装、整包更新、快捷方式修复、占用拒绝、目录保护、构建失败、CLI 优先级、迁移与重复安装，不修改真实桌面、持久 PATH 或 AO 数据。CLI 隔离和启动选择另由 `go test ./internal/cli` 覆盖。
 
 ## 隔离边界
 
@@ -113,7 +117,7 @@ $env:AO_FLEET_PORT = '13002'
 
 旧 Guardian 测试版的 `.ao/guardian` 数据不会被自动移动或删除。需要沿用时，先退出旧版及其任务、备份旧数据，再将数据迁移至独立的 `.ao/fleet` 目录；不要让两个版本共享同一份数据。旧的 `AO_GUARDIAN_*` 环境变量不再作为 Fleet 配置使用。
 
-隔离的是 AO 自己的应用状态，并非操作系统沙箱：手动添加同一个源码目录时仍会访问该目录；外部 Git、Codex、Claude 等工具仍遵循各自的配置。应用启动时不会自动迁移官方 AO 数据；历史导入工具仅供参考，不作为通用升级步骤。不要从外部终端直接运行包内 `resources/daemon/ao.exe` 来操作 Fleet，它仍是原有 CLI；应用启动时才会为后台服务注入上述隔离环境。
+隔离的是 AO 自己的应用状态，并非操作系统沙箱：手动添加同一个源码目录时仍会访问该目录；外部 Git、Codex、Claude 等工具仍遵循各自的配置。应用启动时不会自动迁移官方 AO 数据；历史导入工具仅供参考，不作为通用升级步骤。新的 Fleet 构建中可从外部终端直接运行包内 `resources/daemon/ao.exe`，它与 Desktop 使用相同隔离配置；此前自报 `dev`、未带 Fleet 构建标记的旧 CLI 仍依赖 Desktop 环境，应重建升级。
 
 Cloud 登录复用现有的 `http://127.0.0.1:3000/callback` 回环 OAuth 路径，避免抢占官方 `ao-app://`。本次未使用真实账号验证 Cloud OAuth 登录；本地项目和 agent 使用不依赖此验证。
 

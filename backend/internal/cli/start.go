@@ -88,10 +88,18 @@ func (c *commandContext) runStart(ctx context.Context, cmd *cobra.Command, opts 
 	out := cmd.OutOrStdout()
 	res := startResult{}
 
-	appPath := c.resolveApp()
+	var appPath string
+	var err error
+	if desktopFlavor == "fleet-portable" {
+		appPath, err = c.fleetDesktopPath()
+		if err != nil {
+			return err
+		}
+	} else {
+		appPath = c.resolveApp()
+	}
 	res.Resolved = appPath != ""
 
-	var err error
 	if appPath == "" {
 		// Progress for the fetch path goes to stderr so stdout stays pure JSON
 		// under --json. The resolve-and-launch fast path above stays quiet.
@@ -119,7 +127,11 @@ func (c *commandContext) runStart(ctx context.Context, cmd *cobra.Command, opts 
 		return writeJSON(out, res)
 	}
 
-	c.printDeprecationNotice(out)
+	if desktopFlavor == "fleet-portable" {
+		fmt.Fprintf(out, "AO Fleet: %s\n", appPath)
+	} else {
+		c.printDeprecationNotice(out)
+	}
 	if !opened {
 		c.printManualOpen(out, appPath)
 	}
@@ -702,9 +714,13 @@ func (c *commandContext) openApp(ctx context.Context, appPath string) (bool, err
 		// ponytail: on some Linux hosts the AppImage may need --no-sandbox; not
 		// added here without evidence the bundled Electron requires it. If sandbox
 		// launch failures appear, append "--no-sandbox" as the follow-up.
+		var args []string
+		if desktopFlavor != "fleet-portable" {
+			args = []string{"--installed-via=npm-bootstrap"}
+		}
 		err := c.deps.StartProcess(processStartConfig{
 			Path: appPath,
-			Args: []string{"--installed-via=npm-bootstrap"},
+			Args: args,
 		})
 		if err != nil {
 			// Treat a launch failure as "not opened" so the caller prints the
