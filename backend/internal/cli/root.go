@@ -193,6 +193,9 @@ func NewRootCommand(deps Deps) *cobra.Command {
 	root.SetIn(deps.In)
 	root.SetOut(deps.Out)
 	root.SetErr(deps.Err)
+	if desktopFlavor == "fleet-portable" {
+		root.SetVersionTemplate("{{.Version}}\n")
+	}
 	root.CompletionOptions.DisableDefaultCmd = true
 	// Tag flag-parse failures as usage errors so the entrypoint can exit 2 for
 	// misuse versus 1 for runtime failures. Subcommands inherit this func.

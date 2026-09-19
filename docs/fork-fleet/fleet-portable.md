@@ -58,7 +58,7 @@ frontend/out/
 
 安装成功后，`resources/daemon` 位于当前用户 PATH 首位，原 AO 默认安装目录的 CLI 条目及旧的受管 Fleet CLI 条目会从用户 PATH 中移除，其他工具条目和官方程序文件保留。脚本更新自身进程的 PATH，并向 Windows 广播环境变化；其他已打开的终端仍须重新打开，长期运行的 IDE 可能需要重启。若系统级 PATH 中已有其他 `ao`，脚本在构建前报出冲突，不修改系统级环境；先移除该系统级 AO PATH 条目再安装。PowerShell 中手工定义的 `ao` alias/function 不属于 PATH，需自行移除。
 
-`ao version` 显示 `AO Fleet ...`。Fleet 包内的 `ao.exe` 通过构建标记自行固定数据目录、run-file 和端口，不依赖从 Desktop 继承环境。默认连接 `.ao/fleet` 和 `13001`；自定义实例继续使用 `AO_FLEET_HOME` / `AO_FLEET_PORT`，忽略继承的普通 `AO_DATA_DIR` / `AO_RUN_FILE` / `AO_PORT`。`ao start` 只打开同一安装包的 `fleet.exe`；文件缺失时报错，不扫描、下载或启动官方 AO。
+`ao -v`、`ao --version` 和 `ao version` 均显示 `AO Fleet ...`，安装脚本通过 `ao -v` 验证构建标识。Fleet 包内的 `ao.exe` 通过构建标记自行固定数据目录、run-file 和端口，不依赖从 Desktop 继承环境。默认连接 `.ao/fleet` 和 `13001`；自定义实例继续使用 `AO_FLEET_HOME` / `AO_FLEET_PORT`，忽略继承的普通 `AO_DATA_DIR` / `AO_RUN_FILE` / `AO_PORT`。`ao start` 只打开同一安装包的 `fleet.exe`；文件缺失时报错，不扫描、下载或启动官方 AO。
 
 首次安装要求目标不存在或为空。脚本写入 `.fleet-install.json` 标记，只更新自己管理的目录，拒绝覆盖已有的无关目录、源码、默认/当前 `AO_FLEET_HOME` 数据目录及 junction/符号链接。自定义安装路径应专用于程序文件；不要把数据、项目或个人文件放入其中。升级完整替换程序目录，过时文件也会清理。临时旧目录仅用于切换失败时恢复，成功后删除，不积累历史版本。若清理因文件占用失败，会报告错误，保留临时目录以便处理。
 
