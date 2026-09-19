@@ -8,7 +8,7 @@
 
 历史一次性导入工具仅保留在 `fleet/feat/session-import` 参考分支，不随主分支和安装包提供。
 
-更新时退出 Fleet，解压新版到另一个程序目录后运行即可；保留数据目录。沿用上游的持久终端机制，仍在运行的 agent/终端可能继续占用旧目录内的后台程序，等这些任务结束后再删除旧程序目录。Fleet 隐藏设置中的 Updates 入口，不启动自动更新、官方版本下限检查或 feature build 切换。更新说明集中在本文和包内 `README-Fleet.txt`。
+更新可以手动解压新版，或使用下述固定目录安装脚本；保留数据目录。沿用上游的持久终端机制，关闭窗口后 agent/终端可能继续占用后台程序，替换程序目录前需结束这些任务。Fleet 隐藏设置中的 Updates 入口，不启动自动更新、官方版本下限检查或 feature build 切换。更新说明集中在本文和包内 `README-Fleet.txt`。
 
 窗口名称和 Help → About 显示 **AO Fleet**，由 `profile.json` 的 `displayName` 配置。发行名 `Fleet`、`fleet.exe`、包名、数据目录和配置关键字保持不变。侧栏、启动页、托盘和原有多语言文件保持上游实现，没有额外的 Fleet 更新说明页面。
 
@@ -49,6 +49,36 @@ frontend/out/
 构建脚本准备资源、编译、打目录包并压缩，**不强制运行测试**，也不会创建安装器或发布 GitHub Release。原有 `package`、`make`、`publish` 命令保持上游含义；本功能使用单独的 `package:fleet` 入口。
 
 如果机器装有多个 Node.js，确认 `node --version` 和 npm 实际使用的 Node 都是 24+。直接调用另一目录的旧 `npm.cmd` 可能仍会使用旁边的旧 Node。
+
+## 固定目录安装与更新（Windows）
+
+在 **`main-fleet` 工作副本**中双击 `scripts/install-fleet.cmd`。默认安装到 `C:\ao`，安装后桌面的 **AO Fleet** 快捷方式直接启动 `C:\ao\fleet.exe`，工作目录和图标也指向该目录；每次安装都会重新创建这个快捷方式，修复目标错误、参数残留、损坏或被删除的情况。通过 Windows 获取当前用户的实际桌面目录，支持 OneDrive/重定向桌面，不修改其他快捷方式。
+
+流程：检查分支、目标目录和运行进程 → `npm ci` 准备 product-ui/frontend 依赖 → 调用现有 `package-fleet.mjs` 重新打包 → 复制本次 `frontend/out/Fleet-win32-x64` 目录到临时目录 → 再次检查运行进程 → 替换目标目录 → 修复快捷方式。不会根据 ZIP 文件时间挑选旧包，不自动拉取代码、切换分支或启动应用；未提交的源码修改也会参与构建。构建失败不改变已安装程序。
+
+首次安装要求目标不存在或为空。脚本写入 `.fleet-install.json` 标记，只更新自己管理的目录，拒绝覆盖已有的无关目录、源码、默认/当前 `AO_FLEET_HOME` 数据目录及 junction/符号链接。自定义安装路径应专用于程序文件；不要把数据、项目或个人文件放入其中。升级完整替换程序目录，过时文件也会清理。临时旧目录仅用于切换失败时恢复，成功后删除，不积累历史版本。若清理因文件占用失败，会报告错误，保留临时目录以便处理。
+
+脚本检查目标目录中运行的所有可执行文件，包括 Fleet UI、daemon 和 terminal host。发现占用时报告名称和 PID 并停止，不强杀进程；关闭窗口可能不够，需要先结束相应后台任务。退出后重新运行脚本。官方 AO 安装在其他目录，不会因此被关闭。默认数据继续位于 `%USERPROFILE%\.ao\fleet`，程序替换不迁移或清理数据。
+
+命令行使用（不暂停窗口，可更改安装目录）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-fleet.ps1
+# 或安装到另一专用目录
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-fleet.ps1 -InstallDir D:\Apps\AO-Fleet
+```
+
+依赖同上：Node.js 24+、npm、Go 满足 `go.work`、Git。双击时使用 PATH；若本机默认版本太旧，可创建 **不提交 Git** 的 `scripts/install-fleet.local.json`，指定现有工具的绝对路径，仅对本次构建生效，不修改系统 PATH。可选的 `installDir` 指定双击时的默认安装位置，命令行 `-InstallDir` 优先；例如 `C:\ao` 已有数据时使用 `C:\ao\Fleet` 子目录，保留旁边的数据：
+
+```json
+{
+  "installDir": "C:\\ao\\Fleet",
+  "node": "C:\\Tools\\node24\\node.exe",
+  "go": "C:\\Tools\\go\\bin\\go.exe"
+}
+```
+
+Windows 安装脚本测试：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-fleet.test.ps1`。测试使用临时安装目录和临时桌面，验证首次安装、整包更新、快捷方式修复、占用拒绝、目录保护及构建失败，不接触真实桌面或 AO 数据。
 
 ## 隔离边界
 
@@ -97,6 +127,7 @@ Cloud 登录复用现有的 `http://127.0.0.1:3000/callback` 回环 OAuth 路径
 - `frontend/src/renderer/components/settings/settingsCatalog.tsx`：通过现有可见性规则隐藏 Updates 入口，复用原有设置组件和翻译。
 - `frontend/scripts/package-fleet.mjs`：复用上游资源准备脚本，生成完整目录、ZIP 和 SHA-256。
 - `frontend/scripts/smoke-fleet.mjs`：对真实打包产物执行临时用户目录测试。
+- `scripts/install-fleet.{cmd,ps1}`：从集成分支重新打包、替换固定安装目录并修复桌面快捷方式；`install-fleet.test.ps1` 验证安装边界。
 
 这是一项独立的桌面分发功能，与 Windows Codex 账号存储修复、CI 编译配置分别提交。不改 Go 后端或 API。未来 rebase 时重点检查：新增的硬编码 `.ao` 路径、Electron 初始化顺序、daemon 环境覆盖顺序、自动更新入口，以及 Forge hooks/资源列表变化。配置覆盖层和独立脚本尽量复用上游机制。
 
