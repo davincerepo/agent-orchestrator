@@ -22,4 +22,6 @@ Fork：https://github.com/davincerepo/agent-orchestrator
 
 功能分支从公共基底分叉，不合入无关功能；同一功能内保留独立的实现、修复和 CI 提交。每项功能保留实现文档与行为测试。`main-fleet` 通过显式 merge commit 集成已验证分支，用于运行和打包。
 
+使用独立 Git worktree 开发时，工作完成后必须释放该 worktree 对功能分支的占用，避免主工作目录无法切换到同一分支。先确认修改已提交或妥善保存、没有仍在使用该 worktree 的开发任务，再执行 `git -C "<worktree 路径>" switch --detach`，保留目录和提交但解除分支占用；确认目录不再需要时，也可以使用 `git worktree remove "<worktree 路径>"` 清理。不得强制删除有未保存修改的 worktree。收尾时用 `git worktree list` 确认已完成任务的独立 worktree 不再占用功能分支。
+
 同步官方时先更新公共基底，再逐个更新功能分支并在临时集成分支验证。不要将整个 `main-fleet` 合回单个功能分支。共享 API/SQL 生成文件根据各分支实际源代码重新生成，集成时再校验。不修改已经应用的数据库迁移，不把同步上游与不相关功能变更混在一个提交。
