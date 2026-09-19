@@ -26,6 +26,14 @@ Follow every worker, pull request, CI run, and review in a live Kanban.
 <img src="docs/assets/readme/hero.png" alt="Agent Orchestrator Kanban showing worker sessions grouped by live status" width="100%" />
 </div>
 
+## AO Fleet fork
+
+原仓库：https://github.com/Untrivial-ai/agent-orchestrator
+
+Fork：https://github.com/davincerepo/agent-orchestrator · 集成分支：`main-fleet`
+
+功能与分支维护说明：[docs/fork-fleet/fork.md](docs/fork-fleet/fork.md)。
+
 ## A workspace for agent-driven development
 
 One coding agent can handle a task. Running several across a project creates a different job: deciding what matters, splitting work cleanly, giving each agent the right context, preventing branch collisions, and following every change through review and merge.
