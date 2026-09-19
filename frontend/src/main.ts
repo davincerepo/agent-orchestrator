@@ -6,6 +6,8 @@ import { launchTriageInTerminal } from "./main/triage-launch";
 import { initializeDesktopLog } from "./main/desktop-log";
 import { syncMacWindowButtons } from "./main/window-chrome";
 import { MAC_TRAFFIC_LIGHT_ROW_HEIGHT, MAC_WINDOW_BUTTON_X, MAC_WINDOW_BUTTON_RADIUS } from "./shared/window-chrome";
+import { fleetRuntime, resolveDesktopDaemonLaunch as resolveDaemonLaunch } from "./main/fleet-bootstrap";
+import fleetProfile from "../fork-fleet/profile.json";
 import { finishUpdateQuit } from "./main/update-quit";
 import { acknowledgeMacUpdateRestart } from "./main/mac-update-progress";
 import { consumeUpdateRelaunchFlag } from "./main/update-relaunch-flag";
@@ -93,7 +95,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { type DaemonLaunchSpec, bundledDaemonIdentityError, resolveDaemonLaunch } from "./shared/daemon-launch";
+import { type DaemonLaunchSpec, bundledDaemonIdentityError } from "./shared/daemon-launch";
 import { createListenPortScanner, defaultRunFilePath, parseRunFile } from "./shared/daemon-discovery";
 import type { DaemonStatus } from "./shared/daemon-status";
 import { canonicalPathInside, sameCanonicalPath } from "./shared/path-identity";
@@ -309,7 +311,7 @@ const APP_DISPLAY_NAME = "Orchestrator.inc";
 // Must run before app ready so the About panel and default-menu role labels use it.
 // Unpackaged runs get a distinct name so the dev window, dock menu, and About
 // panel never impersonate the installed app (#3642).
-app.setName(app.isPackaged ? APP_DISPLAY_NAME : `${APP_DISPLAY_NAME} (dev)`);
+app.setName(fleetRuntime ? fleetProfile.displayName : app.isPackaged ? APP_DISPLAY_NAME : `${APP_DISPLAY_NAME} (dev)`);
 
 // An unsigned dev Electron is a new app to macOS whenever its binary changes, so Chromium's
 // keychain-held cookie key prompted on start. Dev runs use the stand-in key; packaged keep the keychain.
@@ -322,7 +324,7 @@ if (!app.isPackaged && process.platform === "darwin") {
 // Notification.isSupported() still returns true but show() silently drops the
 // toast, so notifications never appear. No-op on macOS/Linux.
 if (process.platform === "win32") {
-	app.setAppUserModelId("dev.agent-orchestrator.desktop");
+	app.setAppUserModelId(fleetRuntime ? fleetProfile.appId : "dev.agent-orchestrator.desktop");
 }
 
 // Escape hatch for hosts whose GPU driver stack crashes Chromium on startup
@@ -355,9 +357,9 @@ if (disableGpu === "1" || disableGpu === "true" || disableGpu === "yes" || disab
 // are deliberately NOT overridable — their profile is part of the install.
 app.setPath(
 	"userData",
-	app.isPackaged
+	fleetRuntime?.electronDir ?? (app.isPackaged
 		? path.join(os.homedir(), ".ao", "electron")
-		: (process.env.AO_DEV_ELECTRON_DIR ?? path.join(os.homedir(), ".ao", "dev", "electron")),
+		: (process.env.AO_DEV_ELECTRON_DIR ?? path.join(os.homedir(), ".ao", "dev", "electron"))),
 );
 
 // Resolve once against the launch cwd, before the daemon can chdir. The exact
@@ -666,7 +668,7 @@ protocol.registerSchemesAsPrivileged([
 if (!app.requestSingleInstanceLock()) {
 	app.exit(0);
 } else {
-	registerCloudProtocol();
+	if (!fleetRuntime) registerCloudProtocol();
 	installLifecycleLog();
 }
 
@@ -1040,7 +1042,7 @@ async function createWindowInternal(): Promise<void> {
 		// Agent Browser creates Unix sockets below each run root. Keep this base
 		// deliberately short so the namespace/session suffix stays below macOS's
 		// 103-byte sockaddr_un limit; all AO state remains under ~/.ao.
-		dataDir: path.join(os.homedir(), ".ao", ...(app.isPackaged ? ["br"] : ["dev", "br"])),
+		dataDir: fleetRuntime?.browserDir ?? path.join(os.homedir(), ".ao", ...(app.isPackaged ? ["br"] : ["dev", "br"])),
 		log: (message) => console.log(`AO: ${message}`),
 	});
 	await agentBrowserRuntime.prepare();
@@ -1071,7 +1073,7 @@ async function createWindowInternal(): Promise<void> {
 		height: 860,
 		minWidth: 960,
 		minHeight: 640,
-		title: app.isPackaged ? APP_DISPLAY_NAME : `${APP_DISPLAY_NAME} (dev)`,
+		title: app.getName(),
 		icon: windowIconPath(),
 		backgroundColor: NATIVE_WINDOW_BACKGROUND_DARK,
 		// Shown once the renderer has loaded (showWhenRendererLoaded below), so the
@@ -1875,7 +1877,7 @@ function daemonEnv(forceKeep = keepDaemonAlive(process.env)): NodeJS.ProcessEnv 
 	// Windows keeps its native environment semantics while overlaying values
 	// exported by the selected login-shell probe.
 	if (process.platform === "win32") {
-		return { ...process.env, ...(cachedShellEnv ?? {}), ...devExtras, ...telemetryOverrides(), ...ownerTag };
+		return { ...process.env, ...(cachedShellEnv ?? {}), ...devExtras, ...telemetryOverrides(), ...ownerTag, ...fleetRuntime?.env };
 	}
 	return buildDaemonEnv(
 		process.env,
@@ -2616,7 +2618,7 @@ async function startDaemonInner(startEpoch: number, autoRestartIntent: DaemonAut
 	let keepDaemonLogFd: number | undefined;
 	let stdio: "pipe" | "ignore" | ["pipe", number | "ignore", number | "ignore"] = "pipe";
 	if (keep) {
-		const logPath = path.join(os.homedir(), ".ao", "daemon.log");
+		const logPath = fleetRuntime?.logPath ?? path.join(os.homedir(), ".ao", "daemon.log");
 		try {
 			keepDaemonLogFd = openSync(logPath, "a");
 			stdio = ["pipe", keepDaemonLogFd, keepDaemonLogFd];
@@ -3571,8 +3573,8 @@ ipcMain.handle("menu:action", (event, action: string) => {
 		case "help.about":
 			void dialog.showMessageBox(win, {
 				type: "info",
-				title: `About ${APP_DISPLAY_NAME}`,
-				message: APP_DISPLAY_NAME,
+				title: `About ${app.getName()}`,
+				message: app.getName(),
 				detail: `Version ${app.getVersion()}`,
 				buttons: ["OK"],
 			});
@@ -4005,11 +4007,13 @@ ipcMain.handle("appState:markFirstRunProjectPromptSeen", async () => {
 });
 
 ipcMain.handle("updateSettings:get", async (): Promise<UpdateSettings> => {
+	if (fleetRuntime) return { enabled: false, channel: "latest", nightlyAck: false, feature: null, macDifferentialUpdates: false };
 	const runFile = runFilePath();
 	if (!runFile) return { enabled: false, channel: "latest", nightlyAck: false, feature: null, macDifferentialUpdates: false };
 	return readUpdateSettings(path.dirname(runFile));
 });
 ipcMain.handle("updateSettings:set", async (_event, settings: UpdateSettings) => {
+	if (fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	await setUpdateSettings(path.dirname(runFile), settings);
@@ -4051,24 +4055,29 @@ ipcMain.handle("keybindings:setRecording", (event, active: unknown): void => {
 	keybindingRecordingActive = active;
 });
 
-ipcMain.handle("featureBuilds:list", () => listFeatureBuilds());
-ipcMain.handle("featureBuilds:getActive", () => getActiveFeatureBuild());
+ipcMain.handle("featureBuilds:list", () => fleetRuntime ? [] : listFeatureBuilds());
+ipcMain.handle("featureBuilds:getActive", () => fleetRuntime ? null : getActiveFeatureBuild());
 
-ipcMain.handle("updates:getStatus", (): UpdateStatus => getUpdateStatus());
+ipcMain.handle("updates:getStatus", (): UpdateStatus => fleetRuntime
+	? { state: "unsupported", message: "Update Fleet by replacing its application folder." }
+	: getUpdateStatus());
 ipcMain.handle("updates:check", async (_event, options?: UpdateCheckOptions) => {
+	if (fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	await checkForUpdatesNow(path.dirname(runFile), options);
 });
 ipcMain.handle("updates:returnHome", async (_event, requestId?: string) => {
+	if (fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	await returnToHome(path.dirname(runFile), requestId);
 });
 ipcMain.handle("updates:download", async (_event, requestId?: string) => {
+	if (fleetRuntime) return;
 	await downloadUpdateNow(requestId);
 });
-ipcMain.handle("updates:install", (_event, confirmedVersion?: string) => quitAndInstallUpdate(confirmedVersion));
+ipcMain.handle("updates:install", (_event, confirmedVersion?: string) => fleetRuntime ? undefined : quitAndInstallUpdate(confirmedVersion));
 // Retry after a failed macOS preparation: Squirrel can't reset a stalled staging
 // in-process, so restart AO like a manual quit-and-reopen. install-on-quit is
 // already off on the failed path, so quitting can't apply a half-prepared build.
@@ -4288,7 +4297,7 @@ ipcMain.on(TRAY_RENDERER_READY_CHANNEL, (event) => {
 // Data dir resolves to AO_DATA_DIR when set, else ~/.ao (prod) or ~/.ao/dev
 // (dev), so instances with their own data dir keep their own sign-in.
 function cloudDataDir(): string {
-	return resolveCloudAuthDir(process.env, os.homedir(), desktopLaunchWorkingDirectory, !isDev);
+	return fleetRuntime?.root ?? resolveCloudAuthDir(process.env, os.homedir(), desktopLaunchWorkingDirectory, !isDev);
 }
 
 // The control plane the daemon is configured for, the only server the AO
@@ -4535,7 +4544,7 @@ app.on("second-instance", (_event, argv) => {
 // A live updater additionally requires a signed + notarized build — see
 // frontend/docs/desktop-release.md.
 function initAutoUpdates(): void {
-	if (!app.isPackaged) return;
+	if (!app.isPackaged || fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	const stateDir = path.dirname(runFile);
@@ -4613,6 +4622,12 @@ app.whenReady().then(async () => {
 	});
 	powerMonitor.on("suspend", () => recordUpdateDiagnostic("power-suspend"));
 	powerMonitor.on("resume", () => recordUpdateDiagnostic("power-resume"));
+	if (app.isPackaged && !fleetRuntime) {
+		const { checkDesktopVersionFloor } = await import("./main/desktop-version-floor");
+		await checkDesktopVersionFloor().catch((err) =>
+			console.warn("desktop version floor check failed:", err),
+		);
+	}
 	void refreshGitHubOwners();
 	const authority = new TelemetryPolicyAuthority({ dataDir: desktopDataDir, packagedDefault: app.isPackaged, platform: process.platform });
 	const policyController = new DesktopTelemetryController({

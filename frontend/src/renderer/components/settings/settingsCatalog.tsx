@@ -5,6 +5,7 @@ import type { TFunction } from "i18next";
 import type { GlobalSettingsSection, HarnessDiagnosticsRequest } from "../../stores/ui-store";
 import { BillingSection } from "./BillingSection";
 import { BrowserChromeSection } from "./BrowserChromeSection";
+import { isFleetPortable } from "../../../shared/desktop-flavor";
 import { BrowserDownloadsSection } from "./BrowserDownloadsSection";
 import { BrowserProfilesSection } from "./BrowserProfilesSection";
 import { CoderSettingsSection } from "./CoderSettingsSection";
@@ -185,6 +186,7 @@ const globalSettingsCatalog: SettingsCatalogItem[] = [
 		id: "updates",
 		icon: RefreshCw,
 		label: (t) => t("settings.updates"),
+		visible: () => !isFleetPortable,
 		render: (_t, titleHidden) => <UpdatesSection titleHidden={titleHidden} />,
 	},
 	{

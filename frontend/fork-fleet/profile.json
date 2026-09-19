@@ -1,0 +1,9 @@
+{
+	"name": "Fleet",
+	"displayName": "AO Fleet",
+	"appId": "dev.fleet.agent-orchestrator",
+	"executableName": "fleet",
+	"flavor": "fleet-portable",
+	"port": 13001,
+	"releaseRepo": "davincerepo/agent-orchestrator"
+}

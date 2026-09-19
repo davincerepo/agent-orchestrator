@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { sentrySourceMaps } from "./vite.sentry";
+import { fleetBuildDefines } from "./fork-fleet/build";
 
 const sentry = sentrySourceMaps();
 
@@ -10,6 +11,7 @@ export default defineConfig({
 	// Set only by the release build (build-artifacts.yml). Without it a packaged
 	// copy never initializes Sentry (src/shared/sentry-config.ts).
 	define: {
+		...fleetBuildDefines(),
 		"process.env.AO_PUBLISHED_BUILD": JSON.stringify(process.env.AO_PUBLISHED_BUILD === "1" ? "1" : ""),
 	},
 	plugins: sentry.plugins,

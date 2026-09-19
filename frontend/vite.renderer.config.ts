@@ -3,6 +3,7 @@
 // (package.json test script) because it only auto-discovers vite.config.*.
 import { execFileSync } from "node:child_process";
 import { defineConfig } from "vitest/config";
+import { fleetBuildDefines } from "./fork-fleet/build";
 import type { Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
@@ -219,6 +220,7 @@ const sentry = sentrySourceMaps();
 
 export default defineConfig({
 	define: {
+		...fleetBuildDefines(),
 		"import.meta.env.VITE_AO_GIT_BRANCH": JSON.stringify(DEV_BUILD_INFO.branch),
 		"import.meta.env.VITE_AO_GIT_COMMIT": JSON.stringify(DEV_BUILD_INFO.commit),
 		"import.meta.env.VITE_AO_GIT_WORKTREE": JSON.stringify(DEV_BUILD_INFO.worktree),
