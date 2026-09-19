@@ -81,6 +81,21 @@ func TestFleetCLIConfigOverridesOrdinaryAOEnvironment(t *testing.T) {
 	}
 }
 
+func TestFleetCLIVersionCommands(t *testing.T) {
+	previous := desktopFlavor
+	desktopFlavor = "fleet-portable"
+	t.Cleanup(func() { desktopFlavor = previous })
+	setConfigEnv(t)
+	for _, arg := range []string{"-v", "--version", "version"} {
+		t.Run(arg, func(t *testing.T) {
+			out, _, err := executeCLI(t, Deps{}, arg)
+			if err != nil || strings.TrimSpace(out) != VersionString() || !strings.HasPrefix(out, "AO Fleet ") {
+				t.Fatalf("ao %s: output=%q err=%v", arg, out, err)
+			}
+		})
+	}
+}
+
 func TestFleetCLIStartDoesNotUseOfficialMarkerOrDownload(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Fleet portable is Windows-only")

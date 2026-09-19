@@ -163,7 +163,7 @@ function Assert-FleetCLIPathPriority([string]$Directory) {
 
 function Assert-FleetCLI([string]$Directory) {
     $binary = Join-Path $Directory 'resources\daemon\ao.exe'
-    $version = & $binary version
+    $version = & $binary -v
     if ($LASTEXITCODE -ne 0 -or "$version" -notmatch '^AO Fleet ') {
         throw "The package CLI is not a Fleet build: $binary. Rebuild with package:fleet before installing."
     }
