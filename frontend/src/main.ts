@@ -1,3 +1,5 @@
+import { fleetRuntime, resolveDesktopDaemonLaunch as resolveDaemonLaunch } from "./main/fleet-bootstrap";
+import fleetProfile from "../fork-fleet/profile.json";
 import { finishUpdateQuit } from "./main/update-quit";
 import { acknowledgeMacUpdateRestart } from "./main/mac-update-progress";
 import {
@@ -64,7 +66,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { type DaemonLaunchSpec, bundledDaemonIdentityError, resolveDaemonLaunch } from "./shared/daemon-launch";
+import { type DaemonLaunchSpec, bundledDaemonIdentityError } from "./shared/daemon-launch";
 import { createListenPortScanner, defaultRunFilePath, parseRunFile } from "./shared/daemon-discovery";
 import type { DaemonStatus } from "./shared/daemon-status";
 import {
@@ -180,14 +182,14 @@ process.stdout.on("error", ignoreStdStreamError);
 process.stderr.on("error", ignoreStdStreamError);
 
 // Must run before app ready so the About panel and default-menu role labels use it.
-app.setName("Agent Orchestrator");
+app.setName(fleetRuntime ? fleetProfile.displayName : "Agent Orchestrator");
 
 // Windows shows native toasts only when the app declares an AppUserModelID that
 // matches its installer shortcut (the NSIS maker's appId). Without it,
 // Notification.isSupported() still returns true but show() silently drops the
 // toast, so notifications never appear. No-op on macOS/Linux.
 if (process.platform === "win32") {
-	app.setAppUserModelId("dev.agent-orchestrator.desktop");
+	app.setAppUserModelId(fleetRuntime ? fleetProfile.appId : "dev.agent-orchestrator.desktop");
 }
 
 // Escape hatch for hosts whose GPU driver stack crashes Chromium on startup
@@ -220,9 +222,9 @@ if (disableGpu === "1" || disableGpu === "true" || disableGpu === "yes" || disab
 // are deliberately NOT overridable — their profile is part of the install.
 app.setPath(
 	"userData",
-	app.isPackaged
+	fleetRuntime?.electronDir ?? (app.isPackaged
 		? path.join(os.homedir(), ".ao", "electron")
-		: (process.env.AO_DEV_ELECTRON_DIR ?? path.join(os.homedir(), ".ao", "dev", "electron")),
+		: (process.env.AO_DEV_ELECTRON_DIR ?? path.join(os.homedir(), ".ao", "dev", "electron"))),
 );
 
 // Resolve once against the launch cwd, before the daemon can chdir. The exact
@@ -395,7 +397,7 @@ protocol.registerSchemesAsPrivileged([
 
 // Register ao-app:// as the deep-link protocol for WorkOS auth callbacks.
 // Must run before app.whenReady().
-registerCloudProtocol();
+if (!fleetRuntime) registerCloudProtocol();
 if (!app.requestSingleInstanceLock()) {
 	app.exit(0);
 }
@@ -556,7 +558,7 @@ async function createWindowInternal(): Promise<void> {
 		// Agent Browser creates Unix sockets below each run root. Keep this base
 		// deliberately short so the namespace/session suffix stays below macOS's
 		// 103-byte sockaddr_un limit; all AO state remains under ~/.ao.
-		dataDir: path.join(os.homedir(), ".ao", ...(app.isPackaged ? ["br"] : ["dev", "br"])),
+		dataDir: fleetRuntime?.browserDir ?? path.join(os.homedir(), ".ao", ...(app.isPackaged ? ["br"] : ["dev", "br"])),
 		log: (message) => console.log(`AO: ${message}`),
 	});
 	await agentBrowserRuntime.prepare();
@@ -578,7 +580,7 @@ async function createWindowInternal(): Promise<void> {
 		height: 860,
 		minWidth: 960,
 		minHeight: 640,
-		title: "Agent Orchestrator",
+		title: app.getName(),
 		icon: windowIconPath(),
 		backgroundColor: NATIVE_WINDOW_BACKGROUND_DARK,
 		// Windows goes frameless and the renderer paints the whole titlebar,
@@ -1127,7 +1129,7 @@ function daemonEnv(forceKeep = keepDaemonAlive(process.env)): NodeJS.ProcessEnv 
 	// Windows keeps its native environment semantics while overlaying values
 	// exported by the selected login-shell probe.
 	if (process.platform === "win32") {
-		return { ...process.env, ...(cachedShellEnv ?? {}), ...devExtras, ...telemetryOverrides(), ...ownerTag };
+		return { ...process.env, ...(cachedShellEnv ?? {}), ...devExtras, ...telemetryOverrides(), ...ownerTag, ...fleetRuntime?.env };
 	}
 	return buildDaemonEnv(process.env, cachedShellEnv, { ...devExtras, ...telemetryOverrides(), ...ownerTag });
 }
@@ -1625,7 +1627,7 @@ async function startDaemonInner(startEpoch: number): Promise<DaemonStatus> {
 	let keepDaemonLogFd: number | undefined;
 	let stdio: "pipe" | "ignore" | ["pipe", number | "ignore", number | "ignore"] = "pipe";
 	if (keep) {
-		const logPath = path.join(os.homedir(), ".ao", "daemon.log");
+		const logPath = fleetRuntime?.logPath ?? path.join(os.homedir(), ".ao", "daemon.log");
 		try {
 			keepDaemonLogFd = openSync(logPath, "a");
 			stdio = ["pipe", keepDaemonLogFd, keepDaemonLogFd];
@@ -2058,8 +2060,8 @@ ipcMain.handle("menu:action", (_event, action: string) => {
 		case "help.about":
 			void dialog.showMessageBox(win, {
 				type: "info",
-				title: "About Agent Orchestrator",
-				message: "Agent Orchestrator",
+				title: `About ${app.getName()}`,
+				message: app.getName(),
 				detail: `Version ${app.getVersion()}`,
 				buttons: ["OK"],
 			});
@@ -2267,11 +2269,13 @@ ipcMain.handle("appState:setMigration", async (_event, migration: MigrationState
 });
 
 ipcMain.handle("updateSettings:get", async (): Promise<UpdateSettings> => {
+	if (fleetRuntime) return { enabled: false, channel: "latest", nightlyAck: false, feature: null };
 	const runFile = runFilePath();
 	if (!runFile) return { enabled: false, channel: "latest", nightlyAck: false, feature: null };
 	return readUpdateSettings(path.dirname(runFile));
 });
 ipcMain.handle("updateSettings:set", async (_event, settings: UpdateSettings) => {
+	if (fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	await setUpdateSettings(path.dirname(runFile), settings);
@@ -2305,24 +2309,29 @@ ipcMain.handle("keybindings:setRecording", (event, active: unknown): void => {
 	keybindingRecordingActive = active;
 });
 
-ipcMain.handle("featureBuilds:list", () => listFeatureBuilds());
-ipcMain.handle("featureBuilds:getActive", () => getActiveFeatureBuild());
+ipcMain.handle("featureBuilds:list", () => fleetRuntime ? [] : listFeatureBuilds());
+ipcMain.handle("featureBuilds:getActive", () => fleetRuntime ? null : getActiveFeatureBuild());
 
-ipcMain.handle("updates:getStatus", (): UpdateStatus => getUpdateStatus());
+ipcMain.handle("updates:getStatus", (): UpdateStatus => fleetRuntime
+	? { state: "unsupported", message: "Update Fleet by replacing its application folder." }
+	: getUpdateStatus());
 ipcMain.handle("updates:check", async (_event, options?: UpdateCheckOptions) => {
+	if (fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	await checkForUpdatesNow(path.dirname(runFile), options);
 });
 ipcMain.handle("updates:returnHome", async (_event, requestId?: string) => {
+	if (fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	await returnToHome(path.dirname(runFile), requestId);
 });
 ipcMain.handle("updates:download", async (_event, requestId?: string) => {
+	if (fleetRuntime) return;
 	await downloadUpdateNow(requestId);
 });
-ipcMain.handle("updates:install", (_event, confirmedVersion?: string) => quitAndInstallUpdate(confirmedVersion));
+ipcMain.handle("updates:install", (_event, confirmedVersion?: string) => fleetRuntime ? undefined : quitAndInstallUpdate(confirmedVersion));
 
 function cancelDockBounce(): void {
 	if (pendingBounce === null) return;
@@ -2474,6 +2483,7 @@ ipcMain.on(TRAY_RENDERER_READY_CHANNEL, (event) => {
 // Cloud auth IPC — cloud:getSession, cloud:signIn, cloud:signOut.
 // Data dir resolves to ~/.ao (prod) or ~/.ao/dev (dev) matching daemon conventions.
 function cloudDataDir(): string {
+	if (fleetRuntime) return fleetRuntime.root;
 	return isDev
 		? path.join(os.homedir(), ".ao", DEV_STATE_SUBDIR)
 		: path.join(os.homedir(), ".ao");
@@ -2562,7 +2572,7 @@ app.on("second-instance", (_event, argv) => {
 // A live updater additionally requires a signed + notarized build — see
 // frontend/docs/desktop-release.md.
 function initAutoUpdates(): void {
-	if (!app.isPackaged) return;
+	if (!app.isPackaged || fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	const stateDir = path.dirname(runFile);
@@ -2622,7 +2632,7 @@ async function writeAppStateOnLaunch(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-	if (app.isPackaged) {
+	if (app.isPackaged && !fleetRuntime) {
 		const { checkDesktopVersionFloor } = await import("./main/desktop-version-floor");
 		await checkDesktopVersionFloor().catch((err) =>
 			console.warn("desktop version floor check failed:", err),

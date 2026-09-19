@@ -22,6 +22,8 @@
 		"dev:web": "VITE_NO_ELECTRON=1 vite --config vite.renderer.config.ts",
 		"prepackage": "npm run build:daemon && npm run build:tmux && npm run browser-runtime:prepare && npm run build:acp-runtime",
 		"package": "electron-forge package",
+		"package:fleet": "node ./scripts/package-fleet.mjs",
+		"test:fleet:packaged": "node ./scripts/smoke-fleet.mjs",
 		"premake": "npm run build:daemon && npm run build:tmux && npm run browser-runtime:prepare && npm run build:acp-runtime",
 		"make": "electron-forge make",
 		"publish": "npm run build:daemon && npm run build:tmux && npm run browser-runtime:prepare && npm run build:acp-runtime && electron-forge publish",

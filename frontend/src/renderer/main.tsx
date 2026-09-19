@@ -1,4 +1,5 @@
 import "./lib/apply-initial-theme";
+import { desktopProductName } from "../shared/desktop-flavor";
 import { createRoot } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
@@ -20,6 +21,7 @@ import { useSoundNotificationsStore } from "./stores/sound-notifications-store";
 import { useTelemetryPolicyStore } from "./stores/telemetry-policy-store";
 
 const router = createAppRouter(queryClient);
+document.title = desktopProductName;
 
 // Main owns consent and only acknowledges opt-out after every live AO shell
 // confirms that its in-memory renderer queues were actually purged.

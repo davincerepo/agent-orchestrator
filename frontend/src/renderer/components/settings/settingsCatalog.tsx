@@ -2,6 +2,7 @@ import { BadgeCheck, Bot, CircleHelp, Cloud, Globe2, Keyboard, RefreshCw, Settin
 import { lazy, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import type { GlobalSettingsSection } from "../../stores/ui-store";
+import { isFleetPortable } from "../../../shared/desktop-flavor";
 import { BrowserDownloadsSection } from "./BrowserDownloadsSection";
 import { BrowserProfilesSection } from "./BrowserProfilesSection";
 import { CloudCredentialsSection } from "./CloudCredentialsSection";
@@ -101,6 +102,7 @@ const globalSettingsCatalog: SettingsCatalogItem[] = [
 		id: "updates",
 		icon: RefreshCw,
 		label: (t) => t("settings.updates"),
+		visible: () => !isFleetPortable,
 		render: (_t, titleHidden) => <UpdatesSection titleHidden={titleHidden} />,
 	},
 	{

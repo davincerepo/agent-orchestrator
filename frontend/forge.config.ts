@@ -1,4 +1,6 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
+import { fleetForgeConfig } from "./fork-fleet/forge";
+import fleetProfile from "./fork-fleet/profile.json";
 import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { rebuild } from "@electron/rebuild";
@@ -366,4 +368,4 @@ const config: ForgeConfig = {
 	],
 };
 
-export default config;
+export default process.env.AO_DESKTOP_FLAVOR === fleetProfile.flavor ? fleetForgeConfig(config) : config;
