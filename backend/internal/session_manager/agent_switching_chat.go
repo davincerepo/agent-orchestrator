@@ -392,6 +392,7 @@ func (m *Manager) executeChatAgentSwitch(
 		Env:                     targetLaunchEnv,
 		Model:                   agentConfig.Model,
 		Effort:                  agentConfig.Effort,
+		ServiceTier:             agentConfig.ServiceTier,
 		Permissions:             agentConfig.Permissions,
 		SystemPrompt:            finalSystemPrompt,
 		AdditionalDirectories:   additionalDirectories,
@@ -576,6 +577,7 @@ func committedChatSwitchConversation(
 	conversation.ActiveBranchID = chatSwitchProviderBoundaryID(switchID)
 	conversation.Settings.Model = ""
 	conversation.Settings.ReasoningEffort = ""
+	conversation.Settings.ServiceTier = ""
 	conversation.UpdatedAt = activatedAt
 	return conversation
 }

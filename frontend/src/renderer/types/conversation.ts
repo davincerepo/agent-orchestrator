@@ -565,6 +565,7 @@ export type ApprovalMode = "default" | "accept-edits" | "auto" | "bypass-permiss
 export interface TurnSettings {
 	model?: string;
 	reasoningEffort?: string;
+	serviceTier?: "default" | "priority";
 	approvalMode?: ApprovalMode;
 }
 
@@ -578,6 +579,8 @@ export interface ChatModel {
 	/** Reasoning levels this model supports, in the provider's order. */
 	efforts?: string[];
 	defaultEffort?: string;
+	serviceTiers?: { id: string; name: string; description?: string }[];
+	defaultServiceTier?: string;
 }
 
 /** One provider-owned setting advertised for this live chat session. */

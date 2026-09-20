@@ -310,8 +310,9 @@ func (l *fakeLCM) CommitControllerEpoch(
 	source, target domain.SessionMode,
 	nativeConversationID string,
 	_ bool,
+	modelParameters ...domain.AgentConfig,
 ) (bool, error) {
-	return l.changeControllerEpoch(id, source, target, nativeConversationID, false)
+	return l.changeControllerEpoch(id, source, target, nativeConversationID, false, modelParameters...)
 }
 
 func (l *fakeLCM) RestoreControllerEpoch(
@@ -329,12 +330,18 @@ func (l *fakeLCM) changeControllerEpoch(
 	source, target domain.SessionMode,
 	nativeConversationID string,
 	restore bool,
+	modelParameters ...domain.AgentConfig,
 ) (bool, error) {
 	rec, ok := l.store.sessions[id]
 	if !ok || rec.IsTerminated || domain.NormalizeSessionMode(rec.Mode) != source {
 		return false, nil
 	}
 	rec.Mode = target
+	if len(modelParameters) == 1 {
+		rec.Metadata.Model = modelParameters[0].Model
+		rec.Metadata.ReasoningEffort = modelParameters[0].Effort
+		rec.Metadata.ServiceTier = modelParameters[0].ServiceTier
+	}
 	rec.Metadata.RuntimeHandleID = ""
 	rec.Metadata.RuntimeLaunchID = ""
 	rec.Metadata.AgentSessionID = nativeConversationID

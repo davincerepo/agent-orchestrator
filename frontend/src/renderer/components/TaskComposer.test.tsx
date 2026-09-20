@@ -1071,6 +1071,7 @@ describe("TaskComposer", () => {
 							label: "GPT Test",
 							isDefault: true,
 							efforts: ["low", "high"],
+							serviceTiers: [{ id: "priority", name: "Fast" }],
 						}],
 						allowCustom: true,
 						refreshRecommended: false,
@@ -1079,7 +1080,7 @@ describe("TaskComposer", () => {
 			}
 			return {
 				data: { status: "ok", project: { config: { worker: { agent: "codex", agentConfig: {
-					model: "gpt-test", effort: "high",
+					model: "gpt-test", effort: "high", serviceTier: "priority",
 				} } } } },
 			};
 		});
@@ -1093,13 +1094,16 @@ describe("TaskComposer", () => {
 		fireEvent.click(screen.getByText("Start task"));
 		await waitFor(() => expect(h.post).toHaveBeenCalledTimes(1));
 		expect(h.post.mock.calls[0][1].body).not.toHaveProperty("effort");
+		expect(h.post.mock.calls[0][1].body.serviceTier).toBe("priority");
+		await userEvent.click(screen.getByRole("button", { name: "Fast" }));
+		await userEvent.click(screen.getByRole("menuitem", { name: "Fast off" }));
 
 		await userEvent.click(picker);
 		await userEvent.click(screen.getByRole("menuitem", { name: /Reasoning effort/ }));
 		await userEvent.click(await screen.findByRole("menuitemradio", { name: "Low" }));
 		fireEvent.click(screen.getByText("Start task"));
 		await waitFor(() => expect(h.post).toHaveBeenCalledTimes(2));
-		expect(h.post.mock.calls[1][1].body).toEqual(expect.objectContaining({ effort: "low" }));
+		expect(h.post.mock.calls[1][1].body).toEqual(expect.objectContaining({ effort: "low", serviceTier: "default" }));
 
 		await userEvent.click(picker);
 		await userEvent.click(screen.getByRole("menuitem", { name: /Reasoning effort/ }));

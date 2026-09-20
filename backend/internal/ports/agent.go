@@ -176,12 +176,14 @@ const (
 
 // AgentModelInfo is one model or mode that an adapter reports as selectable.
 type AgentModelInfo struct {
-	ID            string   `json:"id"`
-	Label         string   `json:"label"`
-	Provider      string   `json:"provider,omitempty"`
-	IsDefault     bool     `json:"isDefault,omitempty"`
-	Efforts       []string `json:"efforts,omitempty"`
-	DefaultEffort string   `json:"defaultEffort,omitempty"`
+	Efforts            []string           `json:"efforts,omitempty"`
+	DefaultEffort      string             `json:"defaultEffort,omitempty"`
+	ServiceTiers       []ModelServiceTier `json:"serviceTiers,omitempty"`
+	DefaultServiceTier string             `json:"defaultServiceTier,omitempty"`
+	ID                 string             `json:"id"`
+	Label              string             `json:"label"`
+	Provider           string             `json:"provider,omitempty"`
+	IsDefault          bool               `json:"isDefault,omitempty"`
 }
 
 // AgentModelCatalog is AO's normalized model-picker response.

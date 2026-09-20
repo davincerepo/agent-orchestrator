@@ -37,6 +37,12 @@ const reorderMocks = vi.hoisted(() => ({
 
 const renameSessionMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
+vi.mock("./TerminalModelParameters", () => ({
+	TerminalModelParameters: ({ sessionId, generation, enabled }: { sessionId: string; generation: string; enabled: boolean }) => (
+		<div data-testid="saved-terminal-parameters" data-session={sessionId} data-generation={generation} data-enabled={String(enabled)} />
+	),
+}));
+
 vi.mock("../lib/rename-session", () => ({ renameSession: renameSessionMock }));
 
 vi.mock("motion/react", () => ({
@@ -193,6 +199,27 @@ beforeEach(() => {
 });
 
 describe("CenterPane toolbar session label", () => {
+	it("mounts saved parameters only for the visible Codex worker terminal", () => {
+		const codex = { ...worker, provider: "codex", mode: "tui", terminalGeneration: "generation-1" } satisfies WorkspaceSession;
+		const view = renderCenterPane({ session: codex });
+		expect(screen.getByTestId("saved-terminal-parameters")).toHaveAttribute("data-generation", "generation-1");
+		const show = (props: Partial<ComponentProps<typeof CenterPane>>) => view.rerender(
+			<TooltipProvider><CenterPane daemonReady theme="dark" session={codex} {...props} /></TooltipProvider>,
+		);
+		show({ terminalTarget: { kind: "shell", handleId: "shell-1", generation: "shell-generation", title: "Shell" } });
+		expect(screen.queryByTestId("saved-terminal-parameters")).not.toBeInTheDocument();
+		show({ terminalTarget: { kind: "reviewer", handleId: "review-1", harness: "codex", sessionId: worker.id } });
+		expect(screen.queryByTestId("saved-terminal-parameters")).not.toBeInTheDocument();
+		show({ workspaceFileActive: true });
+		expect(screen.queryByTestId("saved-terminal-parameters")).not.toBeInTheDocument();
+		show({ session: { ...codex, mode: "chat" } });
+		expect(screen.queryByTestId("saved-terminal-parameters")).not.toBeInTheDocument();
+		show({ session: worker });
+		expect(screen.queryByTestId("saved-terminal-parameters")).not.toBeInTheDocument();
+		show({});
+		expect(screen.getByTestId("saved-terminal-parameters")).toHaveAttribute("data-session", "sess-1");
+	});
+
 	const makeShells = (count: number) =>
 		Array.from({ length: count }, (_, i) => ({
 			handleId: `h-${i}`,

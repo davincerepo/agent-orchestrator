@@ -144,7 +144,7 @@ SELECT id, project_id, num, issue_id, kind, harness,
     latest_user_prompt, latest_user_prompt_at, latest_assistant_update, latest_assistant_update_at,
     conversation_checkpoint_state, conversation_checkpoint_generation, conversation_checkpoint_native_id,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
-    native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, session_permissions
+    native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, reasoning_effort, service_tier, session_permissions
 FROM sessions WHERE id = ?
 `
 
@@ -201,6 +201,8 @@ type GetSessionRow struct {
 	AutoInjectCI                     bool
 	AutoReviewEnabled                bool
 	Model                            string
+	ReasoningEffort                  string
+	ServiceTier                      string
 	SessionPermissions               string
 }
 
@@ -260,6 +262,8 @@ func (q *Queries) GetSession(ctx context.Context, id domain.SessionID) (GetSessi
 		&i.AutoInjectCI,
 		&i.AutoReviewEnabled,
 		&i.Model,
+		&i.ReasoningEffort,
+		&i.ServiceTier,
 		&i.SessionPermissions,
 	)
 	return i, err
@@ -276,11 +280,9 @@ INSERT INTO sessions (
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
     native_transcript_path,
     preview_url, preview_revision, terminate_on_pr_merge, cleanup_generation, browser_capability_verifier,
-    session_mode, provider_conversation_id, controller_generation, model, session_permissions,
+    session_mode, provider_conversation_id, controller_generation, model, reasoning_effort, service_tier, session_permissions,
     created_at, updated_at, is_pinned, pinned_at, auto_inject_review, auto_inject_ci
-) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertSessionParams struct {
@@ -329,6 +331,8 @@ type InsertSessionParams struct {
 	ProviderConversationID           string
 	ControllerGeneration             string
 	Model                            string
+	ReasoningEffort                  string
+	ServiceTier                      string
 	SessionPermissions               string
 	CreatedAt                        time.Time
 	UpdatedAt                        time.Time
@@ -385,6 +389,8 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 		arg.ProviderConversationID,
 		arg.ControllerGeneration,
 		arg.Model,
+		arg.ReasoningEffort,
+		arg.ServiceTier,
 		arg.SessionPermissions,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -408,7 +414,7 @@ SELECT id, project_id, num, issue_id, kind, harness,
     latest_user_prompt, latest_user_prompt_at, latest_assistant_update, latest_assistant_update_at,
     conversation_checkpoint_state, conversation_checkpoint_generation, conversation_checkpoint_native_id,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
-    native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, session_permissions
+    native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, reasoning_effort, service_tier, session_permissions
 FROM sessions ORDER BY project_id, num
 `
 
@@ -465,6 +471,8 @@ type ListAllSessionsRow struct {
 	AutoInjectCI                     bool
 	AutoReviewEnabled                bool
 	Model                            string
+	ReasoningEffort                  string
+	ServiceTier                      string
 	SessionPermissions               string
 }
 
@@ -530,6 +538,8 @@ func (q *Queries) ListAllSessions(ctx context.Context) ([]ListAllSessionsRow, er
 			&i.AutoInjectCI,
 			&i.AutoReviewEnabled,
 			&i.Model,
+			&i.ReasoningEffort,
+			&i.ServiceTier,
 			&i.SessionPermissions,
 		); err != nil {
 			return nil, err
@@ -557,7 +567,7 @@ SELECT id, project_id, num, issue_id, kind, harness,
     latest_user_prompt, latest_user_prompt_at, latest_assistant_update, latest_assistant_update_at,
     conversation_checkpoint_state, conversation_checkpoint_generation, conversation_checkpoint_native_id,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
-    native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, session_permissions
+    native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, reasoning_effort, service_tier, session_permissions
 FROM sessions WHERE project_id IS ? ORDER BY num
 `
 
@@ -614,6 +624,8 @@ type ListSessionsByProjectRow struct {
 	AutoInjectCI                     bool
 	AutoReviewEnabled                bool
 	Model                            string
+	ReasoningEffort                  string
+	ServiceTier                      string
 	SessionPermissions               string
 }
 
@@ -679,6 +691,8 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID *domain.P
 			&i.AutoInjectCI,
 			&i.AutoReviewEnabled,
 			&i.Model,
+			&i.ReasoningEffort,
+			&i.ServiceTier,
 			&i.SessionPermissions,
 		); err != nil {
 			return nil, err
@@ -1080,7 +1094,7 @@ UPDATE sessions SET
     native_transcript_path = ?,
     preview_url = ?, preview_revision = ?, terminate_on_pr_merge = ?,
     cleanup_generation = ?, browser_capability_verifier = ?,
-    provider_conversation_id = ?, controller_generation = ?, model = ?, updated_at = ?,
+    provider_conversation_id = ?, controller_generation = ?, model = ?, reasoning_effort = ?, service_tier = ?, updated_at = ?,
     is_pinned = ?, pinned_at = ?, auto_inject_review = ?, auto_inject_ci = ?
 WHERE id = ?
 `
@@ -1127,6 +1141,8 @@ type UpdateSessionParams struct {
 	ProviderConversationID           string
 	ControllerGeneration             string
 	Model                            string
+	ReasoningEffort                  string
+	ServiceTier                      string
 	UpdatedAt                        time.Time
 	IsPinned                         bool
 	PinnedAt                         sql.NullTime
@@ -1178,6 +1194,8 @@ func (q *Queries) UpdateSession(ctx context.Context, arg UpdateSessionParams) er
 		arg.ProviderConversationID,
 		arg.ControllerGeneration,
 		arg.Model,
+		arg.ReasoningEffort,
+		arg.ServiceTier,
 		arg.UpdatedAt,
 		arg.IsPinned,
 		arg.PinnedAt,

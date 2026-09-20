@@ -206,6 +206,7 @@ type Conversation struct {
 	UsageCurrency              sql.NullString
 	ActiveBranchID             string
 	OpencodeMode               string
+	ServiceTier                sql.NullString
 }
 
 type ConversationActivity struct {
@@ -572,6 +573,8 @@ type Session struct {
 	NativeCheckpointEvidence         string
 	LatestAssistantUpdateAt          sql.NullTime
 	NativeIdentityObservedAt         sql.NullTime
+	ReasoningEffort                  string
+	ServiceTier                      string
 }
 
 type SessionCleanupFact struct {

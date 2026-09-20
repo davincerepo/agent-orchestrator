@@ -408,12 +408,12 @@ describe("ProjectSettingsForm", () => {
 			if (path === "/api/v1/agents") return agentCatalogResponse;
 			if (path === "/api/v1/agents/{agent}/models") return { data: {
 				agent: "codex", selectionMode: "catalog", allowCustom: false,
-				models: [{ id: "gpt-test", label: "GPT Test", isDefault: true, efforts: ["low", "high"] }],
+				models: [{ id: "gpt-test", label: "GPT Test", isDefault: true, efforts: ["low", "high"], serviceTiers: [{ id: "priority", name: "Fast" }] }],
 			} };
 			return { data: { status: "ok", project: {
 				id: "proj-1", name: "Project One", kind: "single_repo", path: "/repo/project-one",
 				repo: "", defaultBranch: "main", config: {
-					worker: { agent: "codex", agentConfig: { model: "gpt-test", effort: "high" } },
+					worker: { agent: "codex", agentConfig: { model: "gpt-test", effort: "high", serviceTier: "priority" } },
 					orchestrator: { agent: "claude-code" },
 				},
 			} } };
@@ -426,10 +426,13 @@ describe("ProjectSettingsForm", () => {
 		await userEvent.click(screen.getByRole("menuitem", { name: /Reasoning effort/ }));
 		await userEvent.click(screen.getByRole("menuitemradio", { name: "Low" }));
 		expect(picker).toHaveTextContent("GPT Test · Low");
+		expect(screen.getByRole("button", { name: "Fast" })).toHaveTextContent("Fast on");
+		await userEvent.click(screen.getByRole("button", { name: "Fast" }));
+		await userEvent.click(screen.getByRole("menuitem", { name: "Fast off" }));
 		submitSettings();
 		await waitFor(() => expect(putMock).toHaveBeenCalledTimes(1));
 		expect(putMock.mock.calls[0][1].body.config.worker.agentConfig).toEqual(
-			expect.objectContaining({ model: "gpt-test", effort: "low" }),
+			expect.objectContaining({ model: "gpt-test", effort: "low", serviceTier: "default" }),
 		);
 	});
 
@@ -1506,7 +1509,7 @@ describe("ProjectSettingsForm", () => {
 					symlinks: [".env"],
 					postCreate: ["npm install"],
 					agentRules: "keep work small",
-					worker: { agent: "codex", agentConfig: { model: "gpt-5-codex", permissions: "auto" } },
+					worker: { agent: "codex", agentConfig: { model: "gpt-5-codex", permissions: "auto", serviceTier: "default" } },
 					orchestrator: { agent: "claude-code", agentConfig: { model: "gpt-5-codex", permissions: "auto" } },
 					agentConfig: undefined,
 				},

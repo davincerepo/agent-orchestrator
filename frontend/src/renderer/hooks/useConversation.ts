@@ -1167,8 +1167,13 @@ export function useConversationModels(sessionId: string | undefined, enabled: bo
 	const query = useQuery({
 		queryKey: conversationModelsQueryKey(sessionId ?? ""),
 		enabled: Boolean(sessionId) && enabled,
-		// The catalog changes on the scale of provider releases, not turns.
-		staleTime: 5 * 60 * 1000,
+		// This also confirms live thread defaults after daemon reconnect. Session
+		// views are keyed by session ID: check once on entry, never on focus,
+		// network recovery, or a timer. The session query key shares pending reads.
+		staleTime: 0,
+		refetchOnMount: "always",
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
 		retry: false,
 		queryFn: async () => {
 			const { data, error } = await apiClient.GET(
@@ -1184,8 +1189,11 @@ export function useConversationModels(sessionId: string | undefined, enabled: bo
 	return {
 		// An empty list is a real answer: this agent offers no choice, so the picker
 		// hides itself rather than showing an error the user cannot act on.
-		models: query.data ?? [],
+		models: query.isError ? [] : query.data ?? [],
 		isLoading: query.isLoading,
+		error: query.isError
+			? "Model parameters could not be confirmed. Reopen this session to retry."
+			: undefined,
 	};
 }
 
@@ -1421,6 +1429,7 @@ function toSnapshot(wire: WireSnapshot): ConversationSnapshot {
 		settings: {
 			model: wire.settings?.model || undefined,
 			reasoningEffort: wire.settings?.reasoningEffort || undefined,
+			serviceTier: wire.settings?.serviceTier || undefined,
 			approvalMode: (wire.settings?.approvalMode as ApprovalMode | undefined) || undefined,
 		},
 		// Absent means the provider has not reported, which the meter renders as

@@ -507,6 +507,7 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 	}
 	if cfg.ProviderConversationID != "" {
 		cfg.Effort = conversation.Settings.ReasoningEffort
+		cfg.ServiceTier = conversation.Settings.ServiceTier
 	}
 	if cfg.ProviderConversationID != "" && conversation.Settings.ApprovalMode != "" {
 		cfg.Permissions = conversation.Settings.ApprovalMode
@@ -517,6 +518,7 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 		}
 		conversation.Settings.Model = cfg.Model
 		conversation.Settings.ReasoningEffort = cfg.Effort
+		conversation.Settings.ServiceTier = cfg.ServiceTier
 		conversation.Settings.ApprovalMode = cfg.Permissions
 		if err := s.store.SetConversationSettings(ctx, conversation.ID, conversation.Settings, s.now()); err != nil {
 			return nil, fmt.Errorf("record initial conversation settings: %w", err)
@@ -545,6 +547,7 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 			PrepareEnv:             prepareEnv,
 			Model:                  cfg.Model,
 			Effort:                 cfg.Effort,
+			ServiceTier:            cfg.ServiceTier,
 			Permissions:            cfg.Permissions,
 			SystemPrompt:           cfg.SystemPrompt,
 			ProviderScopeID:        providerScopeID,
@@ -562,6 +565,7 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 			PrepareEnv:            prepareEnv,
 			Model:                 cfg.Model,
 			Effort:                cfg.Effort,
+			ServiceTier:           cfg.ServiceTier,
 			Permissions:           cfg.Permissions,
 			SystemPrompt:          cfg.SystemPrompt,
 			ProviderScopeID:       providerScopeID,
@@ -1010,6 +1014,8 @@ func (s *Service) ArmChatHandoff(
 	if err != nil {
 		return err
 	}
+	controller.configMu.Lock()
+	defer controller.configMu.Unlock()
 	return controller.ArmHandoff(ctx, policy)
 }
 
@@ -1686,7 +1692,8 @@ func (s *Service) SetTurnSettings(
 	id domain.SessionID,
 	settings domain.ConversationSettings,
 ) (domain.ConversationSettings, error) {
-	if _, err := s.requireChatSession(ctx, id); err != nil {
+	record, err := s.requireChatSession(ctx, id)
+	if err != nil {
 		return domain.ConversationSettings{}, err
 	}
 	controller, err := s.Controller(id)
@@ -1695,6 +1702,12 @@ func (s *Service) SetTurnSettings(
 	}
 	controller.configMu.Lock()
 	defer controller.configMu.Unlock()
+	if controller.handoffActive() {
+		return domain.ConversationSettings{}, ErrControllerHandoff
+	}
+	if err := validateModelParameters(ctx, record.Harness, controller.conv, settings); err != nil {
+		return domain.ConversationSettings{}, err
+	}
 	// The turn-settings endpoint does not own provider session mode choices.
 	settings.OpenCodeMode = controller.Settings().OpenCodeMode
 	if err := controller.SetSettings(ctx, settings); err != nil {

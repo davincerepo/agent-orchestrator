@@ -85,9 +85,10 @@ func (s *transitionLifecycleStore) CommitSessionControllerEpoch(
 	source, target domain.SessionMode,
 	nativeConversationID string,
 	_ time.Time,
+	modelParameters ...domain.AgentConfig,
 ) (bool, error) {
 	return (&fakeLCM{store: s.fakeStore}).changeControllerEpoch(
-		id, source, target, nativeConversationID, false,
+		id, source, target, nativeConversationID, false, modelParameters...,
 	)
 }
 
@@ -606,9 +607,10 @@ func (l *sqliteTransitionLifecycle) CommitControllerEpoch(
 	source, target domain.SessionMode,
 	nativeConversationID string,
 	_ bool,
+	modelParameters ...domain.AgentConfig,
 ) (bool, error) {
 	return l.store.CommitSessionControllerEpoch(
-		ctx, id, source, target, nativeConversationID, time.Now(),
+		ctx, id, source, target, nativeConversationID, time.Now(), modelParameters...,
 	)
 }
 func (l *sqliteTransitionLifecycle) RestoreControllerEpoch(

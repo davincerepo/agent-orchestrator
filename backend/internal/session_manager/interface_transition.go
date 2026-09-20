@@ -513,8 +513,15 @@ func (m *Manager) runInterfaceTransition(
 		fail("LIFECYCLE_UNAVAILABLE", fmt.Errorf("lifecycle manager is unavailable"))
 		return
 	}
+	parameterCtx, parameterCancel := context.WithTimeout(ctx, 10*time.Second)
+	modelParameters, err := m.interfaceModelParameters(parameterCtx, rec, transition.NativeConversationID)
+	parameterCancel()
+	if err != nil {
+		fail("MODEL_PARAMETERS_UNAVAILABLE", err)
+		return
+	}
 	changed, err := m.lcm.CommitControllerEpoch(ctx, rec.ID, transition.SourceMode,
-		transition.TargetMode, transition.NativeConversationID, transition.NativeConversationID == "")
+		transition.TargetMode, transition.NativeConversationID, transition.NativeConversationID == "", modelParameters...)
 	if err != nil || !changed {
 		if err == nil {
 			err = fmt.Errorf("session mode compare-and-swap failed")

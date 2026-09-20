@@ -525,7 +525,7 @@ func encodeSteerDeliveryRequest(msg ports.ChatUserMessage) (string, error) {
 	encoded, err := json.Marshal(steerDeliveryRequest{
 		Text: msg.Text, Content: msg.Content, Origin: normalizeOrigin(msg.Origin),
 		Settings: deliveryRequestSettings{
-			Model: msg.Settings.Model, Effort: msg.Settings.Effort, Approval: msg.Settings.Approval,
+			Model: msg.Settings.Model, Effort: msg.Settings.Effort, ServiceTier: msg.Settings.ServiceTier, Approval: msg.Settings.Approval,
 		},
 	})
 	if err != nil {

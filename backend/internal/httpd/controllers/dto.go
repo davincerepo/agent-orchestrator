@@ -289,6 +289,7 @@ type SpawnSessionRequest struct {
 	// ParentSessionID is supplied by `ao spawn` inside an AO session. The daemon
 	// validates it before deriving inherited worker settings.
 	ParentSessionID domain.SessionID       `json:"parentSessionId,omitempty"`
+	ServiceTier     string                 `json:"serviceTier,omitempty" enum:"default,priority"`
 	TrackerProvider domain.TrackerProvider `json:"trackerProvider,omitempty" enum:"github,gitlab"`
 	Kind            domain.SessionKind     `json:"kind,omitempty" enum:"worker,orchestrator"`
 	Harness         domain.AgentHarness    `json:"harness,omitempty" enum:"claude-code,codex,aider,opencode,grok,droid,amp,agy,crush,cursor,qwen,copilot,goose,auggie,continue,devin,cline,kimi,muse,kiro,kilocode,vibe,pi,kimchi,omp,prime-agent,autohand"`
@@ -872,6 +873,7 @@ type DelegateTaskRequest struct {
 	Agent           domain.AgentHarness `json:"agent,omitempty" enum:"claude-code,codex,aider,opencode,grok,droid,amp,agy,crush,cursor,qwen,copilot,goose,auggie,continue,devin,cline,kimi,muse,kiro,kilocode,vibe,pi,kimchi,omp,prime-agent,autohand,fake"`
 	Model           string              `json:"model,omitempty" maxLength:"256"`
 	Effort          *string             `json:"effort,omitempty" maxLength:"64"`
+	ServiceTier     string              `json:"serviceTier,omitempty" enum:"default,priority"`
 	// ApprovalMode is an optional per-session override. The UI uses the explicit
 	// bypass value only after the user accepts an approval-less Chat fallback.
 	ApprovalMode domain.PermissionMode `json:"approvalMode,omitempty" enum:"default,accept-edits,auto,bypass-permissions"`
@@ -2035,9 +2037,11 @@ type SetConversationConfigOptionRequest struct {
 
 // ConversationModelResponse is one model the provider offers.
 type ConversationModelResponse struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"displayName"`
-	Description string `json:"description,omitempty"`
+	ServiceTiers       []ports.ModelServiceTier `json:"serviceTiers,omitempty"`
+	DefaultServiceTier string                   `json:"defaultServiceTier,omitempty"`
+	ID                 string                   `json:"id"`
+	DisplayName        string                   `json:"displayName"`
+	Description        string                   `json:"description,omitempty"`
 	// Default marks the model the provider would pick on its own, so a client can
 	// label it rather than inventing its own idea of a default.
 	Default bool `json:"default"`
@@ -2076,6 +2080,7 @@ type ConversationSkillResponse struct {
 // Every field is optional and an empty value means "use the provider's default",
 // so clearing a choice and never making one are the same thing.
 type ConversationTurnSettingsPayload struct {
+	ServiceTier     string `json:"serviceTier,omitempty" enum:"default,priority"`
 	Model           string `json:"model,omitempty"`
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 	ApprovalMode    string `json:"approvalMode,omitempty" enum:"default,accept-edits,auto,bypass-permissions"`
@@ -2602,4 +2607,13 @@ type MuteDeviceRequest struct {
 // routes.
 type InstallIDParam struct {
 	InstallID string `path:"installId" description:"The device's stable install id."`
+}
+
+// TerminalModelParametersResponse contains only observed native settings.
+// Empty fields are unknown; they are never catalog or project defaults.
+type TerminalModelParametersResponse struct {
+	Supported       bool   `json:"supported"`
+	Model           string `json:"model,omitempty"`
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	ServiceTier     string `json:"serviceTier,omitempty" enum:",default,priority"`
 }

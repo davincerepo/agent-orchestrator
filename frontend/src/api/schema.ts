@@ -2128,6 +2128,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/{sessionId}/terminal-model-parameters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the terminal's saved native model parameters without changing configuration */
+        get: operations["getTerminalModelParameters"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/{sessionId}/workspace/diffs": {
         parameters: {
             query?: never;
@@ -2531,6 +2548,7 @@ export interface components {
             mode?: string;
             model?: string;
             permissions?: string;
+            serviceTier?: string;
         };
         AgentInfo: {
             /**
@@ -2591,11 +2609,13 @@ export interface components {
         };
         AgentModelInfo: {
             defaultEffort?: string;
+            defaultServiceTier?: string;
             efforts?: string[];
             id: string;
             isDefault?: boolean;
             label: string;
             provider?: string;
+            serviceTiers?: components["schemas"]["ModelServiceTier"][];
         };
         AgentModelsResponse: {
             agentId: string;
@@ -3103,10 +3123,12 @@ export interface components {
         ConversationModelResponse: {
             default: boolean;
             defaultEffort?: string;
+            defaultServiceTier?: string;
             description?: string;
             displayName: string;
             efforts?: string[];
             id: string;
+            serviceTiers?: components["schemas"]["ModelServiceTier"][];
         };
         ConversationModelsResponse: {
             models: components["schemas"]["ConversationModelResponse"][];
@@ -3213,6 +3235,8 @@ export interface components {
             approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions";
             model?: string;
             reasoningEffort?: string;
+            /** @enum {string} */
+            serviceTier?: "default" | "priority";
         };
         ConversationUsagePayload: {
             /** Format: int64 */
@@ -3252,6 +3276,8 @@ export interface components {
             mode?: "tui" | "chat";
             model?: string;
             projectId: string;
+            /** @enum {string} */
+            serviceTier?: "default" | "priority";
         };
         DelegateTaskResponse: {
             ok: boolean;
@@ -3614,6 +3640,11 @@ export interface components {
             ready: boolean;
             running: boolean;
             supported: boolean;
+        };
+        ModelServiceTier: {
+            description?: string;
+            id: string;
+            name: string;
         };
         MuteDeviceRequest: {
             /** @description True to stop sending push notifications to this device. */
@@ -4232,6 +4263,8 @@ export interface components {
             projectId?: string;
             prompt?: string;
             /** @enum {string} */
+            serviceTier?: "default" | "priority";
+            /** @enum {string} */
             trackerProvider?: "github" | "gitlab";
         };
         SpawnSessionResponse: {
@@ -4367,6 +4400,13 @@ export interface components {
             ready: boolean;
             /** @description Individual checks in stable order for the selected probe. */
             requirements: components["schemas"]["SystemRequirement"][];
+        };
+        TerminalModelParametersResponse: {
+            model?: string;
+            reasoningEffort?: string;
+            /** @enum {string} */
+            serviceTier?: "" | "default" | "priority";
+            supported: boolean;
         };
         TrackerIntakeConfig: {
             assignee?: string;
@@ -12253,6 +12293,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getTerminalModelParameters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Session identifier, e.g. project-1. */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalModelParametersResponse"];
                 };
             };
             /** @description Not Found */

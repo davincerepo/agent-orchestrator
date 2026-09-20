@@ -1572,9 +1572,10 @@ func (c *Controller) SetSettings(ctx context.Context, settings domain.Conversati
 func (c *Controller) turnSettings() ports.ChatTurnSettings {
 	current := c.Settings()
 	return ports.ChatTurnSettings{
-		Model:    current.Model,
-		Effort:   current.ReasoningEffort,
-		Approval: current.ApprovalMode,
+		Model:       current.Model,
+		Effort:      current.ReasoningEffort,
+		ServiceTier: current.ServiceTier,
+		Approval:    current.ApprovalMode,
 	}
 }
 

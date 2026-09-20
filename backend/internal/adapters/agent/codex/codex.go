@@ -103,6 +103,8 @@ func (p *Plugin) GetConfigSpec(ctx context.Context) (ports.ConfigSpec, error) {
 	}
 	return ports.ConfigSpec{
 		Fields: []ports.ConfigField{
+			{Key: "effort", Type: ports.ConfigFieldString, Description: "Reasoning effort id advertised by the selected model."},
+			{Key: "serviceTier", Type: ports.ConfigFieldString, Description: "default (Fast off) or priority (Fast on)."},
 			{
 				Key:         "model",
 				Type:        ports.ConfigFieldString,
@@ -123,7 +125,7 @@ func (p *Plugin) GetLaunchCommand(ctx context.Context, cfg ports.LaunchConfig) (
 		return nil, err
 	}
 
-	var providerArgs []string
+	providerArgs := modelParameterFlags(cfg.Config)
 	if err := appendSessionHookFlags(&providerArgs); err != nil {
 		return nil, err
 	}
@@ -162,7 +164,7 @@ func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig)
 		return nil, false, err
 	}
 
-	var providerArgs []string
+	providerArgs := modelParameterFlags(cfg.Config)
 	if err := appendSessionHookFlags(&providerArgs); err != nil {
 		return nil, false, err
 	}
@@ -526,4 +528,12 @@ func appendTerminalCompatibilityFlags(cmd *[]string) {
 var fileExists = func(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+func modelParameterFlags(cfg ports.AgentConfig) []string {
+	var args []string
+	if cfg.ServiceTier != "" {
+		args = append(args, "-c", fmt.Sprintf("service_tier=%q", cfg.ServiceTier))
+	}
+	return args
 }

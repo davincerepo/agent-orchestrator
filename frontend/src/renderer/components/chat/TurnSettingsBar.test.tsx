@@ -708,6 +708,38 @@ describe("remember project permissions", () => {
 });
 
 describe("native model selection", () => {
+	it("sends explicit Fast on and off values for a capable Codex model", async () => {
+		const user = userEvent.setup();
+		const onChange = vi.fn();
+		const props = {
+			models: [{ id: "fleet-test", displayName: "Fleet test", default: true, efforts: ["high"], serviceTiers: [{ id: "priority", name: "Fast" }] }],
+			harness: "codex",
+			onChange,
+		};
+		const { rerender } = render(<TurnSettingsBar {...props} settings={{ model: "fleet-test", reasoningEffort: "high", serviceTier: "default" }} />);
+		await user.click(screen.getByRole("button", { name: "Model and reasoning effort for the next turn" }));
+		await user.click(screen.getByRole("menuitem", { name: /Fast/ }));
+		screen.getByRole("menuitemradio", { name: "On" }).focus();
+		await user.keyboard("{Enter}");
+		expect(onChange).toHaveBeenLastCalledWith({ model: "fleet-test", reasoningEffort: "high", serviceTier: "priority" });
+		rerender(<TurnSettingsBar {...props} settings={{ model: "fleet-test", reasoningEffort: "high", serviceTier: "priority" }} />);
+		await user.click(screen.getByRole("button", { name: "Model and reasoning effort for the next turn" }));
+		await user.click(screen.getByRole("menuitem", { name: /Fast/ }));
+		screen.getByRole("menuitemradio", { name: "Off" }).focus();
+		await user.keyboard("{Enter}");
+		expect(onChange).toHaveBeenLastCalledWith({ model: "fleet-test", reasoningEffort: "high", serviceTier: "default" });
+	});
+
+	it.each(["unknown", "plain"])("hides Fast for model %s without advertised support", async (model) => {
+		const user = userEvent.setup();
+		render(<TurnSettingsBar harness="codex" models={[
+			{ id: "capable", displayName: "Capable", default: true, serviceTiers: [{ id: "priority", name: "Fast" }] },
+			{ id: "plain", displayName: "Plain", default: false },
+		]} settings={{ model }} onChange={vi.fn()} />);
+		await user.click(screen.getByRole("button", { name: "Model and reasoning effort for the next turn" }));
+		expect(screen.queryByRole("menuitem", { name: /Fast/ })).not.toBeInTheDocument();
+	});
+
 	it("keeps an explicit model visible when the catalog does not contain it", () => {
 		render(
 			<TurnSettingsBar
