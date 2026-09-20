@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -41,26 +40,6 @@ type AgentConfig struct {
 	// project/role preference; new sessions fall back to Auto when none is saved.
 	// Other adapter callers retain their existing baseline for an empty value.
 	Permissions PermissionMode `json:"permissions,omitempty"`
-}
-
-// UnmarshalJSON accepts the former fleet key while persisting only upstream's
-// effort spelling. An explicit effort (including empty) wins over the old key.
-func (c *AgentConfig) UnmarshalJSON(data []byte) error {
-	type config AgentConfig
-	var wire struct {
-		config
-		Effort       *string `json:"effort"`
-		LegacyEffort string  `json:"reasoningEffort"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	*c = AgentConfig(wire.config)
-	c.Effort = wire.LegacyEffort
-	if wire.Effort != nil {
-		c.Effort = *wire.Effort
-	}
-	return nil
 }
 
 // IsZero reports whether the config carries no settings, so storage can persist
