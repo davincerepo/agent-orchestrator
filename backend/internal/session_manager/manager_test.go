@@ -4661,7 +4661,7 @@ func TestSpawnWorker_AppendsActiveOrchestratorContact(t *testing.T) {
 	for _, want := range []string{
 		"## Orchestrator Coordination",
 		`ao send --session mer-1 --message "<your message>"`,
-		"Message it only for true blockers, cross-session coordination",
+		"Message it when the assigned task is complete",
 	} {
 		if !strings.Contains(systemPrompt, want) {
 			t.Fatalf("system prompt missing %q:\n%s", want, systemPrompt)
