@@ -37,7 +37,8 @@ function Assert-NoLinks([string]$Path, [switch]$Recurse) {
 
 function Assert-FleetDestination([string]$Destination, [string]$RepositoryRoot) {
     if ($Destination.Length -le 3) { throw 'The installation directory cannot be a drive root.' }
-    $protected = @($RepositoryRoot, (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.ao'))
+    $profileRoot = [Environment]::GetFolderPath('UserProfile')
+    $protected = @($RepositoryRoot, (Join-Path $profileRoot '.ao'), (Join-Path $profileRoot '.ao-fleet'))
     if ($env:AO_FLEET_HOME) { $protected += $env:AO_FLEET_HOME }
     foreach ($path in $protected) {
         $path = Get-FullPath $path

@@ -12,7 +12,7 @@ describe("Fleet isolation", () => {
 			AO_DATA_DIR: path.join(home, ".ao/data"), AO_RUN_FILE: path.join(home, ".ao/running.json"),
 			AO_PORT: "3001", AO_DAEMON_COMMAND: "official-ao daemon", AO_CLOUD_AUTH_REDIRECT: "ao-app://callback",
 		});
-		expect(runtime.root).toBe(path.join(home, ".ao/fleet"));
+		expect(runtime.root).toBe(path.join(home, ".ao-fleet"));
 		expect(runtime.env.AO_DATA_DIR).toBe(path.join(runtime.root, "data"));
 		expect(runtime.env.AO_RUN_FILE).toBe(path.join(runtime.root, "running.json"));
 		expect(runtime.env.AO_PORT).toBe("13001");
@@ -32,7 +32,7 @@ describe("Fleet isolation", () => {
 		expect(runtime.env.AO_FLEET_HOME).toBe(root);
 		expect(runtime.env.AO_FLEET_PORT).toBe("13002");
 	});
-	it.each(["", "data", "electron", "dev", "fleet/../data"])("rejects official AO state: %s", (suffix) => {
+	it.each(["", "data", "electron", "dev", "fleet", "fleet/data", "fleet/../data"])("rejects official AO state: %s", (suffix) => {
 		expect(() => resolveFleetRuntime(home, { AO_FLEET_HOME: path.join(home, ".ao", suffix) })).toThrow("official AO");
 	});
 	it("rejects a relative data root", () => {
