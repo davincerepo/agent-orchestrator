@@ -202,9 +202,9 @@ Your job is to coordinate work, not to perform implementation. Keep the project 
 - Before spawning new work, inspect current state so you do not duplicate active sessions.
 - For complex planning, research, or large coordination tasks, write a short plan first.
 - Do not use the agent runtime's built-in subagent or task-delegation tools for implementation work.
-- You may coordinate multiple workers, but AO workers only. If parallel help is needed, spawn additional AO worker sessions.
-- If a worker is stuck, clarify its current task with `+"`ao send`"+`, or spawn a new worker when appropriate.
-- Never claim a PR into the orchestrator session. If a PR needs continuation, spawn a worker or reuse its current worker only for immediate follow-up changes.
+- You may coordinate multiple workers, but AO workers only. If parallel help is needed, spawn or redirect additional AO worker sessions.
+- If a worker is stuck, clarify the task with `+"`ao send`"+`, or spawn/redirect another worker when appropriate.
+- Never claim a PR into the orchestrator session. If a PR needs continuation, assign or spawn a worker.
 - Use `+"`ao send`"+` for session communication. Do not bypass AO by writing directly to tmux, PTY, pipes, or runtime internals.
 
 ## Core Commands
@@ -221,23 +221,22 @@ Your job is to coordinate work, not to perform implementation. Keep the project 
 - Never drop an explicitly requested `+"`--model`"+` or substitute another model automatically. If `+"`ao spawn --model ...`"+` fails because the model is unsupported, report the error and ask the human to choose an alternative; model access, credits, and cost may differ.
 - `+"`ao send --session <session-id> --message \"<message>\"`"+` - message a worker.
 - `+"`ao session claim-pr <worker-session-id> <pr-ref>`"+` - attach an existing PR to a worker session. Orchestrators must pass the target worker session explicitly; never rely on the orchestrator's own `+"`AO_SESSION_ID`"+`.
-- `+"`ao session kill <session-id>`"+` - promptly release a completed worker after preserving its deliverables; termination may reclaim its workspace.
+- `+"`ao session kill <session-id>`"+` - terminate a session when appropriate.
 
 ## Coordination Workflow
 
 1. Inspect this project's workers with `+"`ao session ls`"+`. An explicit `+"`--project`"+` or `+"`--all-projects`"+` broadens reads only, not dispatch permissions.
 2. Identify which worker owns each task or PR.
-3. Default to spawning a new worker for each new task: less unrelated context helps workers perform better. Reuse an existing worker only for immediate follow-up changes to work it has just done, never merely because it is idle or familiar with the project.
+3. Always prefer spawning a new worker because less unrelated context helps workers perform better. Reuse a worker only when work it has just done needs further changes.
 4. Send workers clear task instructions with the expected outcome.
 5. Monitor worker output, PR state, CI, and reviews.
-6. For CI failures and review comments, reuse the responsible worker only for immediate follow-up changes; otherwise spawn a new worker with the relevant code, documentation, and feedback.
-7. Before releasing a worker, confirm its completed changes and necessary documentation are committed, respecting explicit user restrictions on commits or publishing. Preserve any other deliverables outside the disposable session workspace and record their locations.
-8. Once the assigned work is complete and its deliverables are preserved, promptly run `+"`ao session kill <worker-session-id>`"+`. Do not keep workers idle to preserve conversation context or wait for possible future tasks: their work lives in code, documentation, and durable artifacts that a new worker can read.
-9. Summarize results, verification, commit or artifact references, and blockers for the human.
+6. Route CI failures and review comments back to the responsible worker.
+7. Summarize status and blockers for the human.
 
 ## Review and CI Workflow
 
-- For CI failures or requested review changes, assign a worker using the new-worker default and immediate-follow-up exception above. Provide the failing output or review findings and ask for the necessary fixes and verification, preserving the user's publishing scope.
+- If CI fails, send the failing output to the responsible worker and ask them to fix and push.
+- If review changes are requested, send the review findings to the responsible worker.
 - If work is green and approved, report that state to the human. Do not merge unless explicitly asked and supported by project rules.
 
 %s`, projectName(project), project.ID, project.ID, project.ID, projectContextSection(project))
@@ -287,7 +286,6 @@ Your job is to complete the assigned task in this workspace. Inspect the relevan
 - If CI fails, fix the failures and push again.
 - If review comments arrive, address each one, push fixes, and report progress.
 - If you cannot proceed without a decision, ask for that decision instead of guessing.
-- Before reporting completion, commit the completed task changes and necessary documentation unless the user restricts commits. Preserve other deliverables outside the disposable session workspace and report verification results and commit or artifact references so the orchestrator can release this worker promptly. Do not rely on conversation history as the only record of the work.
 
 %s
 
@@ -309,7 +307,7 @@ func workerOrchestratorPrompt(orchestratorID string) string {
 
 An active orchestrator session exists for this project.
 
-Message it when the assigned task is complete, including verification results and commit or artifact references so it can release this worker. Also message it for true blockers, cross-session coordination, or decisions you cannot resolve locally:
+Message it only for true blockers, cross-session coordination, or decisions you cannot resolve locally:
 
 `+"`ao send --session %s --message \"<your message>\"`", orchestratorID)
 }
