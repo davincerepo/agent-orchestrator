@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/google/uuid"
@@ -24,12 +23,14 @@ type sendOptions struct {
 // POST /api/v1/sessions/{id}/send. The CLI keeps its own copy so it need not
 // import httpd.
 type sendAPIRequest struct {
-	Message string `json:"message"`
+	CallerSessionID string `json:"callerSessionId,omitempty"`
+	Message         string `json:"message"`
 }
 
 // The steering DTOs mirror the daemon conversation API without coupling the
 // thin CLI to the HTTP controller package.
 type conversationMessageAPIRequest struct {
+	CallerSessionID string `json:"callerSessionId,omitempty"`
 	Text            string `json:"text"`
 	ClientMessageID string `json:"clientMessageId"`
 	RecoverOnly     bool   `json:"recoverOnly,omitempty"`
@@ -75,27 +76,38 @@ func (c *commandContext) sendMessage(ctx context.Context, opts sendOptions) erro
 	if !opts.recoverOnly && strings.TrimSpace(opts.message) == "" {
 		return usageError{errors.New("usage: --message is required")}
 	}
-	message := opts.message
-	if sender := strings.TrimSpace(os.Getenv("AO_SESSION_ID")); !opts.recoverOnly && sender != "" {
-		message = "[from " + sender + "] " + message
-	}
 	session := strings.TrimSpace(opts.session)
 	if session == "" {
 		return usageError{errors.New("usage: --session is required")}
+	}
+	caller, project, err := c.callerProject(ctx)
+	if err != nil {
+		return err
+	}
+	message := opts.message
+	if caller != "" {
+		// Also fail safely when a new CLI reaches an older daemon that does not
+		// understand callerSessionId. The service repeats this check at dispatch.
+		if _, err := c.fetchScopedSession(ctx, session, project); err != nil {
+			return err
+		}
+		if !opts.recoverOnly {
+			message = "[from " + caller + "] " + message
+		}
 	}
 
 	// PathEscape: session ids are already "-"/digit safe, but may later come
 	// from sanitized issue refs; keep the URL well-formed regardless.
 	path := "sessions/" + url.PathEscape(session)
 	if !opts.steer {
-		return c.postJSON(ctx, path+"/send", sendAPIRequest{Message: message}, nil)
+		return c.postJSON(ctx, path+"/send", sendAPIRequest{CallerSessionID: caller, Message: message}, nil)
 	}
-	return c.steerMessage(ctx, path, message, strings.TrimSpace(opts.clientMessageID), opts.recoverOnly)
+	return c.steerMessage(ctx, path, caller, message, strings.TrimSpace(opts.clientMessageID), opts.recoverOnly)
 }
 
 func (c *commandContext) steerMessage(
 	ctx context.Context,
-	sessionPath, message, clientMessageID string,
+	sessionPath, caller, message, clientMessageID string,
 	recoverOnly bool,
 ) error {
 	if clientMessageID == "" {
@@ -103,7 +115,7 @@ func (c *commandContext) steerMessage(
 	}
 	var result steerOrSendAPIResponse
 	err := c.postJSON(ctx, sessionPath+"/conversation/steer-or-send", conversationMessageAPIRequest{
-		Text: message, ClientMessageID: clientMessageID, RecoverOnly: recoverOnly,
+		CallerSessionID: caller, Text: message, ClientMessageID: clientMessageID, RecoverOnly: recoverOnly,
 	}, &result)
 	if err != nil {
 		var responseErr apiResponseError

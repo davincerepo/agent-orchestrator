@@ -12,6 +12,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/envelope"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	chatsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/chat"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/dispatchscope"
 )
 
 // steerPath is the one route this file owns, named once so the not-implemented
@@ -41,6 +42,7 @@ func (c *ConversationsController) steerOrSend(w http.ResponseWriter, r *http.Req
 	if !decodeConversationBody(w, r, &req) {
 		return
 	}
+	r = r.WithContext(dispatchscope.WithCallerSession(r.Context(), req.CallerSessionID))
 	content, attachmentErr := conversationContent(SendConversationMessageRequest{
 		Attachments: req.Attachments,
 	})
@@ -96,6 +98,7 @@ func (c *ConversationsController) steer(w http.ResponseWriter, r *http.Request) 
 	if !decodeConversationBody(w, r, &req) {
 		return
 	}
+	r = r.WithContext(dispatchscope.WithCallerSession(r.Context(), req.CallerSessionID))
 	if req.RecoverOnly {
 		result, err := c.Svc.RecoverSteer(r.Context(), domain.SessionID(chi.URLParam(r, "sessionId")), req.ClientMessageID)
 		if err != nil {

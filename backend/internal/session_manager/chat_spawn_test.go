@@ -1088,6 +1088,9 @@ func TestChatSpawnStartsControllerAndNoRuntime(t *testing.T) {
 	if start.Env[EnvSessionID] == "" {
 		t.Errorf("controller env missing %s; session-scoped hooks would not identify the session", EnvSessionID)
 	}
+	if start.Env[EnvProjectID] != string(start.ProjectID) || start.Env[EnvSessionID] != string(start.SessionID) {
+		t.Fatalf("Chat command context does not match its AO session: %v", start.Env)
+	}
 
 	// The provider handle must be persisted, or a restart cannot resume.
 	if rec.Metadata.ProviderConversationID != "thread-1" {

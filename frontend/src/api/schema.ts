@@ -3245,6 +3245,8 @@ export interface components {
             approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions";
             attachments?: components["schemas"]["AttachmentInput"][];
             brief: string;
+            /** @description Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication. */
+            callerSessionId?: string;
             effort?: null | string;
             /** @enum {string} */
             mode?: "tui" | "chat";
@@ -3900,6 +3902,8 @@ export interface components {
         };
         SendSessionMessageRequest: {
             attachment?: components["schemas"]["AttachmentInput"];
+            /** @description Calling AO agent session. When supplied, dispatch is limited to its project. Omitted for human requests; message text is never used as caller identity. */
+            callerSessionId?: string;
             message: string;
         };
         SendSessionMessageResponse: {
@@ -4212,6 +4216,8 @@ export interface components {
         SpawnSessionRequest: {
             attachments?: components["schemas"]["AttachmentInput"][];
             branch?: string;
+            /** @description Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication. */
+            callerSessionId?: string;
             displayName?: string;
             /** @enum {string} */
             harness?: "claude-code" | "codex" | "aider" | "opencode" | "grok" | "droid" | "amp" | "agy" | "crush" | "cursor" | "qwen" | "copilot" | "goose" | "auggie" | "continue" | "devin" | "cline" | "kimi" | "muse" | "kiro" | "kilocode" | "vibe" | "pi" | "kimchi" | "omp" | "prime-agent" | "autohand";
@@ -4280,6 +4286,8 @@ export interface components {
         };
         SteerConversationRequest: {
             attachments?: components["schemas"]["ConversationImageContentRequest"][];
+            /** @description Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication. */
+            callerSessionId?: string;
             clientMessageId?: string;
             recoverOnly?: boolean;
             text: string;

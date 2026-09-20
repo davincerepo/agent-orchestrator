@@ -9285,6 +9285,11 @@ components:
         brief:
           maxLength: 16384
           type: string
+        callerSessionId:
+          description: Calling AO agent session. Dispatch is limited to its project.
+            Omitted for human requests; context, not authentication.
+          maxLength: 128
+          type: string
         effort:
           maxLength: 64
           type:
@@ -11004,6 +11009,12 @@ components:
       properties:
         attachment:
           $ref: '#/components/schemas/AttachmentInput'
+        callerSessionId:
+          description: Calling AO agent session. When supplied, dispatch is limited
+            to its project. Omitted for human requests; message text is never used
+            as caller identity.
+          maxLength: 128
+          type: string
         message:
           maxLength: 4096
           minLength: 1
@@ -11804,6 +11815,11 @@ components:
           type: array
         branch:
           type: string
+        callerSessionId:
+          description: Calling AO agent session. Dispatch is limited to its project.
+            Omitted for human requests; context, not authentication.
+          maxLength: 128
+          type: string
         displayName:
           maxLength: 20
           type: string
@@ -11994,6 +12010,11 @@ components:
           items:
             $ref: '#/components/schemas/ConversationImageContentRequest'
           type: array
+        callerSessionId:
+          description: Calling AO agent session. Dispatch is limited to its project.
+            Omitted for human requests; context, not authentication.
+          maxLength: 128
+          type: string
         clientMessageId:
           type: string
         recoverOnly:

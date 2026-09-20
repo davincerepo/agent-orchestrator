@@ -408,7 +408,7 @@ func TestSpawnResolvesProjectFromAOSessionID(t *testing.T) {
 	}
 }
 
-func TestSpawnAOSessionIDFailureRequiresProject(t *testing.T) {
+func TestSpawnAOSessionIDFailureRequiresValidCaller(t *testing.T) {
 	cfg := setConfigEnv(t)
 	var requests []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -427,7 +427,7 @@ func TestSpawnAOSessionIDFailureRequiresProject(t *testing.T) {
 	t.Setenv("AO_SESSION_ID", "missing")
 
 	_, _, err := executeCLI(t, Deps{ProcessAlive: func(int) bool { return true }}, "spawn", "--agent", "codex", "--name", "worker")
-	if err == nil || !strings.Contains(err.Error(), `project could not be resolved from AO_SESSION_ID "missing"; pass --project`) {
+	if err == nil || !strings.Contains(err.Error(), `resolve project for AO_SESSION_ID "missing"`) {
 		t.Fatalf("err=%v, want AO_SESSION_ID project error", err)
 	}
 	want := []string{"GET /api/v1/sessions/missing"}

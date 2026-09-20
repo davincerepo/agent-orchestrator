@@ -282,6 +282,7 @@ type ListSessionsResponse struct {
 
 // SpawnSessionRequest is the body of POST /api/v1/sessions.
 type SpawnSessionRequest struct {
+	CallerSessionID domain.SessionID `json:"callerSessionId,omitempty" maxLength:"128" description:"Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication."`
 	// ProjectID is omitted for a standalone worker session.
 	ProjectID domain.ProjectID `json:"projectId,omitempty"`
 	IssueID   domain.IssueID   `json:"issueId,omitempty"`
@@ -847,7 +848,8 @@ type CleanupSessionsResponse struct {
 
 // SendSessionMessageRequest is the body of POST /api/v1/sessions/{sessionId}/send.
 type SendSessionMessageRequest struct {
-	Message string `json:"message" minLength:"1" maxLength:"4096"`
+	CallerSessionID domain.SessionID `json:"callerSessionId,omitempty" maxLength:"128" description:"Calling AO agent session. When supplied, dispatch is limited to its project. Omitted for human requests; message text is never used as caller identity."`
+	Message         string           `json:"message" minLength:"1" maxLength:"4096"`
 	// Attachment is an optional inline image (e.g. a browser-annotation
 	// snapshot) delivered alongside the message. The daemon writes it into the
 	// session worktree and appends a path reference to the message.
@@ -864,11 +866,12 @@ type SendSessionMessageResponse struct {
 // DelegateTaskRequest is the body of POST /api/v1/orchestrators/delegate.
 // An omitted agent tells the orchestrator to use the project's worker default.
 type DelegateTaskRequest struct {
-	ProjectID domain.ProjectID    `json:"projectId"`
-	Brief     string              `json:"brief" maxLength:"16384"`
-	Agent     domain.AgentHarness `json:"agent,omitempty" enum:"claude-code,codex,aider,opencode,grok,droid,amp,agy,crush,cursor,qwen,copilot,goose,auggie,continue,devin,cline,kimi,muse,kiro,kilocode,vibe,pi,kimchi,omp,prime-agent,autohand,fake"`
-	Model     string              `json:"model,omitempty" maxLength:"256"`
-	Effort    *string             `json:"effort,omitempty" maxLength:"64"`
+	CallerSessionID domain.SessionID    `json:"callerSessionId,omitempty" maxLength:"128" description:"Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication."`
+	ProjectID       domain.ProjectID    `json:"projectId"`
+	Brief           string              `json:"brief" maxLength:"16384"`
+	Agent           domain.AgentHarness `json:"agent,omitempty" enum:"claude-code,codex,aider,opencode,grok,droid,amp,agy,crush,cursor,qwen,copilot,goose,auggie,continue,devin,cline,kimi,muse,kiro,kilocode,vibe,pi,kimchi,omp,prime-agent,autohand,fake"`
+	Model           string              `json:"model,omitempty" maxLength:"256"`
+	Effort          *string             `json:"effort,omitempty" maxLength:"64"`
 	// ApprovalMode is an optional per-session override. The UI uses the explicit
 	// bypass value only after the user accepts an approval-less Chat fallback.
 	ApprovalMode domain.PermissionMode `json:"approvalMode,omitempty" enum:"default,accept-edits,auto,bypass-permissions"`
@@ -1911,6 +1914,7 @@ type SendConversationMessageResponse struct {
 
 // SteerConversationRequest is guidance for a turn that is already running.
 type SteerConversationRequest struct {
+	CallerSessionID domain.SessionID `json:"callerSessionId,omitempty" maxLength:"128" description:"Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication."`
 	// Text is the correction to hand the agent mid-turn.
 	Text string `json:"text"`
 	// Attachments are native image prompt blocks delivered with the correction.
