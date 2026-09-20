@@ -4,11 +4,13 @@
 
 | 配置 | Fleet 默认值 |
 | --- | --- |
-| 状态根目录 | `%USERPROFILE%\.ao\fleet` |
+| 状态根目录 | `%USERPROFILE%\.ao-fleet` |
 | 数据库、工作区、托管账号 | 根目录下 `data` |
 | Electron 配置、单实例锁 | 根目录下 `electron` |
 | daemon 发现文件 / 端口 | 根目录下 `running.json` / `13001` |
 | 自定义实例 | `AO_FLEET_HOME`（专用绝对路径）、`AO_FLEET_PORT`（空闲端口，不得为 3001/3002） |
+
+旧版 `~/.ao/fleet` 不再作为默认路径或允许的自定义路径；升级前完全退出 Fleet，将数据迁至 `~/.ao-fleet`，同时检查持久化绝对路径及 Git worktree 关联。程序不自动移动数据，设置过 `AO_FLEET_HOME` 的环境也需更新。
 
 Desktop 和随包 CLI 固定使用 Fleet 配置，不接受普通 `AO_DATA_DIR`、`AO_RUN_FILE`、`AO_PORT` 等继承值覆盖；不注册 `ao-app://`，关闭官方自动更新、版本下限检查和 feature build 切换。隔离仅覆盖 AO 自身状态，外部 Git/Codex/Claude 和手动选择的源码目录仍遵循各自配置。Cloud OAuth 沿用 localhost:3000 回调，未以真实账号验证。
 
