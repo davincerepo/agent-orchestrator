@@ -6,6 +6,18 @@
 
 可与已安装的官方 AO 同时运行。Fleet 首次启动使用自己的数据，不会自动复制官方的项目、会话或账号配置。程序目录可以移动；默认数据保存在用户目录，**并不是把数据也放在程序旁边的随身版**。
 
+| 配置 | Fleet 默认值 |
+| --- | --- |
+| 状态根目录 | `%USERPROFILE%\.ao-fleet` |
+| 数据库、工作区、托管账号 | 根目录下 `data` |
+| Electron 配置、单实例锁 | 根目录下 `electron` |
+| daemon 发现文件 / 端口 | 根目录下 `running.json` / `13001` |
+| 自定义实例 | `AO_FLEET_HOME`（专用绝对路径）、`AO_FLEET_PORT`（空闲端口，不得为 3001/3002） |
+
+旧版 `~/.ao/fleet` 不再作为默认路径或允许的自定义路径；升级前完全退出 Fleet，将数据迁至 `~/.ao-fleet`，同时检查持久化绝对路径及 Git worktree 关联。程序不自动移动数据，设置过 `AO_FLEET_HOME` 的环境也需更新。
+
+Desktop 和随包 CLI 固定使用 Fleet 配置，不接受普通 `AO_DATA_DIR`、`AO_RUN_FILE`、`AO_PORT` 等继承值覆盖；不注册 `ao-app://`，关闭官方自动更新、版本下限检查和 feature build 切换。隔离仅覆盖 AO 自身状态，外部 Git/Codex/Claude 和手动选择的源码目录仍遵循各自配置。Cloud OAuth 沿用 localhost:3000 回调，未以真实账号验证。
+
 历史一次性导入工具仅保留在 `fleet/feat/session-import` 参考分支，不随主分支和安装包提供。
 
 更新可以手动解压新版，或使用下述固定目录安装脚本；保留数据目录。沿用上游的持久终端机制，关闭窗口后 agent/终端可能继续占用后台程序，替换程序目录前需结束这些任务。Fleet 隐藏设置中的 Updates 入口，不启动自动更新、官方版本下限检查或 feature build 切换。更新说明集中在本文和包内 `README-Fleet.txt`。
@@ -60,11 +72,11 @@ frontend/out/
 
 安装成功后，`resources/daemon` 位于当前用户 PATH 首位，原 AO 默认安装目录的 CLI 条目及旧的受管 Fleet CLI 条目会从用户 PATH 中移除，其他工具条目和官方程序文件保留。脚本更新自身进程的 PATH，并向 Windows 广播环境变化；其他已打开的终端仍须重新打开，长期运行的 IDE 可能需要重启。若系统级 PATH 中已有其他 `ao`，脚本在构建前报出冲突，不修改系统级环境；先移除该系统级 AO PATH 条目再安装。PowerShell 中手工定义的 `ao` alias/function 不属于 PATH，需自行移除。
 
-`ao -v`、`ao --version` 和 `ao version` 均显示 `AO Fleet ...`，安装脚本通过 `ao -v` 验证构建标识。Fleet 包内的 `ao.exe` 通过构建标记自行固定数据目录、run-file 和端口，不依赖从 Desktop 继承环境。默认连接 `.ao/fleet` 和 `13001`；自定义实例继续使用 `AO_FLEET_HOME` / `AO_FLEET_PORT`，忽略继承的普通 `AO_DATA_DIR` / `AO_RUN_FILE` / `AO_PORT`。`ao start` 只打开同一安装包的 `fleet.exe`；文件缺失时报错，不扫描、下载或启动官方 AO。
+`ao -v`、`ao --version` 和 `ao version` 均显示 `AO Fleet ...`，安装脚本通过 `ao -v` 验证构建标识。Fleet 包内的 `ao.exe` 通过构建标记自行固定数据目录、run-file 和端口，不依赖从 Desktop 继承环境。默认连接 `.ao-fleet` 和 `13001`；自定义实例继续使用 `AO_FLEET_HOME` / `AO_FLEET_PORT`，忽略继承的普通 `AO_DATA_DIR` / `AO_RUN_FILE` / `AO_PORT`。`ao start` 只打开同一安装包的 `fleet.exe`；文件缺失时报错，不扫描、下载或启动官方 AO。
 
 首次安装要求目标不存在或为空。脚本写入 `.fleet-install.json` 标记，只更新自己管理的目录，拒绝覆盖已有的无关目录、源码、默认/当前 `AO_FLEET_HOME` 数据目录及 junction/符号链接。自定义安装路径应专用于程序文件；不要把数据、项目或个人文件放入其中。升级完整替换程序目录，过时文件也会清理。临时旧目录仅用于切换失败时恢复，成功后删除，不积累历史版本。若清理因文件占用失败，会报告错误，保留临时目录以便处理。
 
-脚本检查目标目录中运行的所有可执行文件，包括 Fleet UI、daemon 和 terminal host。发现占用时报告名称和 PID 并停止，不强杀进程；关闭窗口可能不够，需要先结束相应后台任务。退出后重新运行脚本。官方 AO 安装在其他目录，不会因此被关闭。默认数据继续位于 `%USERPROFILE%\.ao\fleet`，程序替换不迁移或清理数据。
+脚本检查目标目录中运行的所有可执行文件，包括 Fleet UI、daemon 和 terminal host。发现占用时报告名称和 PID 并停止，不强杀进程；关闭窗口可能不够，需要先结束相应后台任务。退出后重新运行脚本。官方 AO 安装在其他目录，不会因此被关闭。默认数据继续位于 `%USERPROFILE%\.ao-fleet`，程序替换不迁移或清理数据。
 
 命令行使用（不暂停窗口，可更改安装目录）：
 
@@ -93,13 +105,13 @@ Windows 安装脚本测试：`powershell -NoProfile -ExecutionPolicy Bypass -Fil
 | 可执行程序 | `agent-orchestrator.exe` | `fleet.exe` |
 | 应用显示名 | Agent Orchestrator | AO Fleet |
 | Windows App ID | `dev.agent-orchestrator.desktop` | `dev.fleet.agent-orchestrator` |
-| 状态根目录 | `%USERPROFILE%\.ao` | `%USERPROFILE%\.ao\fleet` |
-| Electron 配置、缓存、Cookie、单实例锁 | `.ao\electron` | `.ao\fleet\electron` |
-| 数据库、工作区、托管账号等后端数据 | `.ao\data` | `.ao\fleet\data` |
-| 后台进程发现文件 | `.ao\running.json` | `.ao\fleet\running.json` |
+| 状态根目录 | `%USERPROFILE%\.ao` | `%USERPROFILE%\.ao-fleet` |
+| Electron 配置、缓存、Cookie、单实例锁 | `.ao\electron` | `.ao-fleet\electron` |
+| 数据库、工作区、托管账号等后端数据 | `.ao\data` | `.ao-fleet\data` |
+| 后台进程发现文件 | `.ao\running.json` | `.ao-fleet\running.json` |
 | 后台服务端口 | `3001` | `13001` |
-| Agent Browser 状态 | `.ao\br` | `.ao\fleet\br` |
-| Cloud 登录状态、应用状态、更新设置 | `.ao` 下相应文件 | `.ao\fleet` 下相应文件 |
+| Agent Browser 状态 | `.ao\br` | `.ao-fleet\br` |
+| Cloud 登录状态、应用状态、更新设置 | `.ao` 下相应文件 | `.ao-fleet` 下相应文件 |
 | `ao-app://` 协议注册 | 官方应用管理 | 不注册、不覆盖 |
 | 应用更新 | 官方自动更新 | 退出后手动更换整个程序目录 |
 
@@ -117,7 +129,7 @@ $env:AO_FLEET_PORT = '13002'
 
 `AO_FLEET_HOME` 必须是专用绝对路径；常见官方目录 `.ao`、`.ao/data`、`.ao/electron` 等会被拒绝。不要选其他 AO 实例的自定义数据目录，也不要通过 junction/符号链接映射到它。`AO_FLEET_PORT` 必须是空闲端口，范围 1–65535，禁止使用官方默认的 3001/3002。只改数据根目录而不改端口，不能同时运行两个 Fleet 数据实例；同一个 Fleet 配置仍然维持单实例。
 
-旧 Guardian 测试版的 `.ao/guardian` 数据不会被自动移动或删除。需要沿用时，先退出旧版及其任务、备份旧数据，再将数据迁移至独立的 `.ao/fleet` 目录；不要让两个版本共享同一份数据。旧的 `AO_GUARDIAN_*` 环境变量不再作为 Fleet 配置使用。
+旧 Guardian 测试版的 `.ao/guardian` 数据不会被自动移动或删除。需要沿用时，先退出旧版及其任务、备份旧数据，再将数据迁移至独立的 `.ao-fleet` 目录；不要让两个版本共享同一份数据。旧的 `AO_GUARDIAN_*` 环境变量不再作为 Fleet 配置使用。
 
 隔离的是 AO 自己的应用状态，并非操作系统沙箱：手动添加同一个源码目录时仍会访问该目录；外部 Git、Codex、Claude 等工具仍遵循各自的配置。应用启动时不会自动迁移官方 AO 数据；历史导入工具仅供参考，不作为通用升级步骤。新的 Fleet 构建中可从外部终端直接运行包内 `resources/daemon/ao.exe`，它与 Desktop 使用相同隔离配置；此前自报 `dev`、未带 Fleet 构建标记的旧 CLI 仍依赖 Desktop 环境，应重建升级。
 

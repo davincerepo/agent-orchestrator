@@ -18,6 +18,8 @@ func TestFleetCLIEnvironment(t *testing.T) {
 		{name: "custom", root: filepath.Join(t.TempDir(), "fleet data"), port: "14001"},
 		{name: "relative", root: "relative", invalid: true},
 		{name: "official root", root: filepath.Join(home, ".ao"), invalid: true},
+		{name: "legacy Fleet root", root: filepath.Join(home, ".ao", "fleet"), invalid: true},
+		{name: "legacy Fleet subdirectory", root: filepath.Join(home, ".ao", "fleet", "data"), invalid: true},
 		{name: "official data", root: filepath.Join(home, ".ao", "data"), invalid: true},
 		{name: "prefix sibling", root: filepath.Join(home, ".ao", "fleet-old"), invalid: true},
 		{name: "official port", port: "3001", invalid: true},
@@ -39,7 +41,7 @@ func TestFleetCLIEnvironment(t *testing.T) {
 			}
 			root := tc.root
 			if root == "" {
-				root = filepath.Join(home, ".ao", "fleet")
+				root = filepath.Join(home, ".ao-fleet")
 			}
 			port := tc.port
 			if port == "" {

@@ -38,7 +38,7 @@ for (const file of ["fleet.exe", "resources/app.asar", "resources/daemon/ao.exe"
 writeFileSync(join(appDir, "README-Fleet.txt"), [
 	`Fleet ${version} - Windows x64 portable`,
 	"Run fleet.exe. Keep the entire folder together; no installer is needed.",
-	"Data: %USERPROFILE%\\.ao\\fleet (separate from the official AO application).",
+	"Data: %USERPROFILE%\\.ao-fleet (separate from the official AO application).",
 	"Update: quit Fleet and replace this application folder. Keep your data directory.",
 	"Automatic updates and the official ao-app:// protocol registration are disabled.",
 	"Advanced: AO_FLEET_HOME sets an absolute data root; AO_FLEET_PORT defaults to 13001.",

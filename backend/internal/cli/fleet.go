@@ -36,7 +36,7 @@ func fleetCLIEnvironment(home string, getenv func(string) string) (map[string]st
 	official := filepath.Join(home, ".ao")
 	root := strings.TrimSpace(getenv("AO_FLEET_HOME"))
 	if root == "" {
-		root = filepath.Join(official, "fleet")
+		root = filepath.Join(home, ".ao-fleet")
 	}
 	if !filepath.IsAbs(root) {
 		return nil, fmt.Errorf("AO_FLEET_HOME must be an absolute path")
@@ -48,8 +48,8 @@ func fleetCLIEnvironment(home string, getenv func(string) string) (map[string]st
 		rel = ".."
 	}
 	inside := rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
-	if inside && !strings.EqualFold(rel, "fleet") && !strings.HasPrefix(strings.ToLower(rel), "fleet"+string(filepath.Separator)) {
-		return nil, fmt.Errorf("Fleet must use ~/.ao/fleet or a directory outside the official AO state root")
+	if inside {
+		return nil, fmt.Errorf("Fleet must use ~/.ao-fleet or another directory outside the official AO state root")
 	}
 	portText := strings.TrimSpace(getenv("AO_FLEET_PORT"))
 	if portText == "" {

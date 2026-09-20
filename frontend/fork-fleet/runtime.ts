@@ -5,11 +5,11 @@ export function resolveFleetRuntime(home: string, env: Record<string, string | u
 	const override = env.AO_FLEET_HOME?.trim();
 	if (override && !path.isAbsolute(override)) throw new Error("AO_FLEET_HOME must be an absolute path");
 	const officialRoot = path.resolve(home, ".ao");
-	const root = path.resolve(override || path.join(officialRoot, "fleet"));
+	const root = path.resolve(override || path.join(home, ".ao-fleet"));
 	const relative = path.relative(officialRoot, root);
 	const insideOfficial = relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
-	if (insideOfficial && relative !== "fleet" && !relative.startsWith(`fleet${path.sep}`)) {
-		throw new Error("Fleet must use ~/.ao/fleet or a directory outside the official AO state root");
+	if (insideOfficial) {
+		throw new Error("Fleet must use ~/.ao-fleet or another directory outside the official AO state root");
 	}
 	const port = Number(env.AO_FLEET_PORT?.trim() || profile.port);
 	if (!Number.isInteger(port) || port < 1 || port > 65535 || port === 3001 || port === 3002) {

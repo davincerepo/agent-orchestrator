@@ -93,6 +93,8 @@ try {
     Must-Fail { Assert-FleetDestination (Get-FullPath ([IO.Path]::GetPathRoot($testRoot))) $repository } 'drive root'
     Must-Fail { Assert-FleetDestination $repository $repository } 'overlaps'
     Must-Fail { Assert-FleetDestination (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.ao\fleet') $repository } 'overlaps'
+    Must-Fail { Assert-FleetDestination (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.ao-fleet') $repository } 'overlaps'
+    Must-Fail { Assert-FleetDestination (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.ao-fleet\data') $repository } 'overlaps'
     $env:AO_FLEET_HOME = Join-Path $testRoot 'custom fleet data'
     Must-Fail { Assert-FleetDestination $env:AO_FLEET_HOME $repository } 'overlaps'
     Write-Host 'PASS: source, data, drive roots and unmanaged directories protected'

@@ -11,7 +11,7 @@ const executablePath = resolve(process.argv[2] || join(frontend, "out/Fleet-win3
 const labBase = resolve(process.env.AO_FLEET_TEST_ROOT || join(frontend, "out/fleet-smoke"));
 mkdirSync(labBase, { recursive: true });
 const home = mkdtempSync(join(labBase, "user-"));
-const state = join(home, ".ao/fleet");
+const state = join(home, ".ao-fleet");
 const officialHome = homedir();
 const protocol = () => spawnSync("reg.exe", ["query", "HKCU\\Software\\Classes\\ao-app\\shell\\open\\command", "/ve"], { encoding: "utf8", windowsHide: true }).stdout;
 const originalProtocol = protocol();
