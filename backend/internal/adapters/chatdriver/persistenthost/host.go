@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aoagents/agent-orchestrator/backend/internal/fleetprocess"
 	"github.com/aoagents/agent-orchestrator/backend/internal/processalive"
 )
 
@@ -582,6 +583,13 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := child.Start(); err != nil {
 		return err
 	}
+	releaseTree, err := fleetprocess.Contain(child.Process.Pid)
+	if err != nil {
+		_ = killProviderProcess(context.WithoutCancel(ctx), child)
+		_ = child.Wait()
+		return fmt.Errorf("contain Fleet provider process: %w", err)
+	}
+	defer releaseTree()
 
 	d := Descriptor{
 		Version: ProtocolVersion, SessionID: cfg.SessionID, Protocol: cfg.Protocol,
@@ -642,6 +650,9 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}
 	_ = listener.Close()
+	// Descendants can retain the provider's stdout/stderr after its root exits;
+	// release the job before Wait so inherited pipes cannot strand the host.
+	releaseTree()
 	_ = child.Wait()
 	return runErr
 }

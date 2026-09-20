@@ -30,6 +30,7 @@
 		"src/**/*.tsx",
 		"forge.config.ts",
 		"makers/**/*.ts",
+		"fork-fleet/**/*.ts",
 		"vite.main.config.ts",
 		"vite.preload.config.ts",
 		"vite.renderer.config.ts",

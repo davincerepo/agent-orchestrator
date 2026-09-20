@@ -1,4 +1,11 @@
 {
+	"fleet.closeWindow": "Cerrar ventana",
+	"fleet.quitMenu": "Salir por completo…",
+	"fleet.quitTitle": "¿Salir de Fleet por completo?",
+	"fleet.quitDescription": "Detiene los agentes y terminales de todos los proyectos de esta instancia de Fleet y sale. Se interrumpirá el trabajo en curso. Se conservarán el historial de sesiones y los directorios de trabajo.",
+	"fleet.quitConfirm": "Detener procesos en segundo plano y salir",
+	"fleet.quitting": "Deteniendo Fleet y sus procesos en segundo plano. Puede tardar un minuto…",
+	"fleet.quitFailed": "No se pudieron detener todos los procesos en segundo plano. La ventana seguirá abierta. Vuelve a intentarlo o cierra este diálogo y reinicia Fleet para continuar.",
 	"session.statusChecking": "Comprobando…",
 	"session.statusUnavailable": "No se puede verificar",
 	"session.retryStatus": "Volver a comprobar el estado",

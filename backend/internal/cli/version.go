@@ -18,6 +18,9 @@ var (
 // omitting the commit/date parts when they are unset.
 func VersionString() string {
 	parts := []string{Version}
+	if desktopFlavor == "fleet-portable" {
+		parts = append([]string{"AO Fleet"}, parts...)
+	}
 	if Commit != "" {
 		parts = append(parts, "commit "+Commit)
 	}

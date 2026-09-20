@@ -2,6 +2,7 @@
 // block typechecks; vitest itself must be pointed at this file explicitly
 // (package.json test script) because it only auto-discovers vite.config.*.
 import { defineConfig } from "vitest/config";
+import { fleetBuildDefines } from "./fork-fleet/build";
 import type { Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
@@ -144,6 +145,7 @@ const productUiReactBoundary: Plugin = {
 };
 
 export default defineConfig({
+	define: fleetBuildDefines(),
 	// "@/" → the renderer root (src/renderer), the shadcn/ui import convention.
 	resolve: {
 		alias: {

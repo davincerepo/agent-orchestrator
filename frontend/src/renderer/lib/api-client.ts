@@ -1,4 +1,5 @@
 import createClient from "openapi-fetch";
+import { isFleetPortable } from "../../shared/desktop-flavor";
 import type { components, paths } from "../../api/schema";
 import type { DaemonStatus } from "../../shared/daemon-status";
 import { daemonFailureMessage } from "./daemon-failure";
@@ -9,7 +10,9 @@ function devApiBaseUrl(): string {
 	return typeof window === "undefined" ? "http://127.0.0.1:3001" : window.location.origin;
 }
 
-const explicitApiBaseUrl = import.meta.env.VITE_AO_API_BASE_URL;
+// A portable Fleet renderer must wait for its own supervisor handshake,
+// even if the build environment supplied an official AO API URL.
+const explicitApiBaseUrl = isFleetPortable ? undefined : import.meta.env.VITE_AO_API_BASE_URL;
 const initialApiBaseUrl = explicitApiBaseUrl ?? (import.meta.env.DEV ? devApiBaseUrl() : "http://127.0.0.1:3001");
 
 let runtimeApiBaseUrl: string | null = explicitApiBaseUrl ?? null;

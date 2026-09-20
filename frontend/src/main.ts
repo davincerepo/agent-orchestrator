@@ -1,3 +1,6 @@
+import { fleetRuntime, resolveDesktopDaemonLaunch as resolveDaemonLaunch } from "./main/fleet-bootstrap";
+import { stopFleetProcesses } from "./main/fleet-quit";
+import fleetProfile from "../fork-fleet/profile.json";
 import { finishUpdateQuit } from "./main/update-quit";
 import { acknowledgeMacUpdateRestart } from "./main/mac-update-progress";
 import { consumeUpdateRelaunchFlag } from "./main/update-relaunch-flag";
@@ -66,7 +69,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { type DaemonLaunchSpec, bundledDaemonIdentityError, resolveDaemonLaunch } from "./shared/daemon-launch";
+import { type DaemonLaunchSpec, bundledDaemonIdentityError } from "./shared/daemon-launch";
 import { createListenPortScanner, defaultRunFilePath, parseRunFile } from "./shared/daemon-discovery";
 import type { DaemonStatus } from "./shared/daemon-status";
 import {
@@ -191,14 +194,14 @@ process.stderr.on("error", ignoreStdStreamError);
 // Must run before app ready so the About panel and default-menu role labels use it.
 // Unpackaged runs get a distinct name so the dev window, dock menu, and About
 // panel never impersonate the installed app (#3642).
-app.setName(app.isPackaged ? "Agent Orchestrator" : "Agent Orchestrator (dev)");
+app.setName(fleetRuntime ? fleetProfile.displayName : app.isPackaged ? "Agent Orchestrator" : "Agent Orchestrator (dev)");
 
 // Windows shows native toasts only when the app declares an AppUserModelID that
 // matches its installer shortcut (the NSIS maker's appId). Without it,
 // Notification.isSupported() still returns true but show() silently drops the
 // toast, so notifications never appear. No-op on macOS/Linux.
 if (process.platform === "win32") {
-	app.setAppUserModelId("dev.agent-orchestrator.desktop");
+	app.setAppUserModelId(fleetRuntime ? fleetProfile.appId : "dev.agent-orchestrator.desktop");
 }
 
 // Escape hatch for hosts whose GPU driver stack crashes Chromium on startup
@@ -231,9 +234,9 @@ if (disableGpu === "1" || disableGpu === "true" || disableGpu === "yes" || disab
 // are deliberately NOT overridable — their profile is part of the install.
 app.setPath(
 	"userData",
-	app.isPackaged
+	fleetRuntime?.electronDir ?? (app.isPackaged
 		? path.join(os.homedir(), ".ao", "electron")
-		: (process.env.AO_DEV_ELECTRON_DIR ?? path.join(os.homedir(), ".ao", "dev", "electron")),
+		: (process.env.AO_DEV_ELECTRON_DIR ?? path.join(os.homedir(), ".ao", "dev", "electron"))),
 );
 
 // Resolve once against the launch cwd, before the daemon can chdir. The exact
@@ -309,6 +312,7 @@ const browserCleanupPromises = new Set<Promise<void>>();
 let browserQuitCleanupPromise: Promise<void> | null = null;
 let browserCleanupComplete = false;
 let browserQuitRequested = false;
+let fleetQuitInProgress = false;
 let createWindowPromise: Promise<void> | null = null;
 let browserRuntimeLink: BrowserRuntimeLinkHandle | null = null;
 let browserRuntimeLinkIdentity: BrowserRuntimeIdentity | null = null;
@@ -420,7 +424,7 @@ protocol.registerSchemesAsPrivileged([
 
 // Register ao-app:// as the deep-link protocol for WorkOS auth callbacks.
 // Must run before app.whenReady().
-registerCloudProtocol();
+if (!fleetRuntime) registerCloudProtocol();
 if (!app.requestSingleInstanceLock()) {
 	app.exit(0);
 }
@@ -594,7 +598,7 @@ async function createWindowInternal(): Promise<void> {
 		// Agent Browser creates Unix sockets below each run root. Keep this base
 		// deliberately short so the namespace/session suffix stays below macOS's
 		// 103-byte sockaddr_un limit; all AO state remains under ~/.ao.
-		dataDir: path.join(os.homedir(), ".ao", ...(app.isPackaged ? ["br"] : ["dev", "br"])),
+		dataDir: fleetRuntime?.browserDir ?? path.join(os.homedir(), ".ao", ...(app.isPackaged ? ["br"] : ["dev", "br"])),
 		log: (message) => console.log(`AO: ${message}`),
 	});
 	await agentBrowserRuntime.prepare();
@@ -616,7 +620,7 @@ async function createWindowInternal(): Promise<void> {
 		height: 860,
 		minWidth: 960,
 		minHeight: 640,
-		title: app.isPackaged ? "Agent Orchestrator" : "Agent Orchestrator (dev)",
+		title: app.getName(),
 		icon: windowIconPath(),
 		backgroundColor: NATIVE_WINDOW_BACKGROUND_DARK,
 		// Windows goes frameless and the renderer paints the whole titlebar,
@@ -720,6 +724,7 @@ async function createWindowInternal(): Promise<void> {
 	});
 
 	mainWindow.on("close", (event) => {
+		if (fleetQuitInProgress) { event.preventDefault(); return; }
 		const preventClose = shouldPreventUnsafeChatDraftClose(
 			chatDraftRisks,
 			chatDraftQuitConfirmed || chatDraftWindowCloseConfirmed,
@@ -1175,7 +1180,7 @@ function daemonEnv(forceKeep = keepDaemonAlive(process.env)): NodeJS.ProcessEnv 
 	// Windows keeps its native environment semantics while overlaying values
 	// exported by the selected login-shell probe.
 	if (process.platform === "win32") {
-		return { ...process.env, ...(cachedShellEnv ?? {}), ...devExtras, ...telemetryOverrides(), ...ownerTag };
+		return { ...process.env, ...(cachedShellEnv ?? {}), ...devExtras, ...telemetryOverrides(), ...ownerTag, ...fleetRuntime?.env };
 	}
 	return buildDaemonEnv(process.env, cachedShellEnv, { ...devExtras, ...telemetryOverrides(), ...ownerTag });
 }
@@ -1367,6 +1372,7 @@ async function gracefullyReplaceDaemonForBrowser(status: DaemonStatus): Promise<
 }
 
 async function refreshDaemonStatus(): Promise<DaemonStatus> {
+	if (fleetQuitInProgress) return daemonStatus;
 	if (daemonProcess) {
 		return daemonStatus;
 	}
@@ -1399,6 +1405,7 @@ async function refreshDaemonStatus(): Promise<DaemonStatus> {
 }
 
 async function startDaemon(): Promise<DaemonStatus> {
+	if (fleetQuitInProgress) return daemonStatus;
 	if (daemonStartPromise) {
 		return daemonStartPromise;
 	}
@@ -1673,7 +1680,7 @@ async function startDaemonInner(startEpoch: number): Promise<DaemonStatus> {
 	let keepDaemonLogFd: number | undefined;
 	let stdio: "pipe" | "ignore" | ["pipe", number | "ignore", number | "ignore"] = "pipe";
 	if (keep) {
-		const logPath = path.join(os.homedir(), ".ao", "daemon.log");
+		const logPath = fleetRuntime?.logPath ?? path.join(os.homedir(), ".ao", "daemon.log");
 		try {
 			keepDaemonLogFd = openSync(logPath, "a");
 			stdio = ["pipe", keepDaemonLogFd, keepDaemonLogFd];
@@ -1847,6 +1854,7 @@ async function startDaemonInner(startEpoch: number): Promise<DaemonStatus> {
 		stopDiscovery();
 		if (daemonProcess !== child) return;
 		daemonProcess = null;
+		if (fleetQuitInProgress) { daemonStoppingProcess = null; return; }
 		// An explicit stopDaemon() already set a clean `{ state: "stopped" }`.
 		// daemon-telemetry reports any status carrying a `code` as
 		// ao.renderer.daemon_failure, so don't stamp `code: "exited"` on a stop
@@ -1889,6 +1897,7 @@ function killDaemon(child: ChildProcess): void {
 }
 
 function stopDaemon(): DaemonStatus {
+	if (fleetQuitInProgress) return daemonStatus;
 	daemonStartEpoch += 1;
 	daemonStartPromise = null;
 	// An explicit stop (or a newer restart request) cancels any deferred restart
@@ -1930,6 +1939,7 @@ async function startDaemonForRestart(): Promise<DaemonStatus> {
 }
 
 async function restartDaemon(): Promise<DaemonStatus> {
+	if (fleetQuitInProgress) return daemonStatus;
 	const child = daemonProcess;
 	if (!child) return startDaemonForRestart();
 
@@ -1965,6 +1975,32 @@ async function restartDaemon(): Promise<DaemonStatus> {
 		return daemonStatus;
 	}
 	return startDaemonForRestart();
+}
+
+async function fullyQuitFleet(): Promise<void> {
+	if (fleetQuitInProgress) return;
+	if (chatDraftRisks.length > 0 && !chatDraftQuitConfirmed && !confirmUnsafeChatDraftLeave(
+		chatDraftRisks, (options) => dialog.showMessageBoxSync(options), chatDraftDialog,
+	)) throw new Error("Fleet shutdown was cancelled; unsaved drafts were kept.");
+	fleetQuitInProgress = true;
+	try {
+		// A launch already in flight must settle before inspecting ownership.
+		await daemonStartPromise;
+		const launch = resolveDaemonLaunch(daemonLaunchEnv(), app.isPackaged, process.resourcesPath, app.getAppPath(), os.homedir(), process.platform);
+		const handshakePath = runFilePath();
+		if (!launch || !handshakePath) throw new Error("Cannot resolve this Fleet installation.");
+		daemonRestartAfterExitProcess = null;
+		daemonStoppingProcess = daemonProcess;
+		await stopFleetProcesses(launch, daemonEnv(), handshakePath, daemonProcess?.pid);
+		supervisorLink?.dispose();
+		supervisorLink = null;
+		disposeBrowserRuntimeLink();
+		await disposeAllBrowserViewHosts();
+		chatDraftQuitConfirmed = true;
+	} finally {
+		fleetQuitInProgress = false;
+	}
+	app.quit();
 }
 
 ipcMain.handle("daemon:getStatus", () => refreshDaemonStatus());
@@ -2053,7 +2089,12 @@ ipcMain.on(SET_CHAT_DRAFT_RISK_CHANNEL, (event, risks: unknown, dialogCopy: unkn
 
 // Backs the custom title-bar menu (WindowTitlebar). Each item maps to the same
 // action the native default menu would have performed.
-ipcMain.handle("menu:action", (_event, action: string) => {
+ipcMain.handle("menu:action", (event, action: string) => {
+	if (action === "fleet.quit") {
+		if (event.sender !== getShellWebContents() || !fleetRuntime || process.platform !== "win32") throw new Error("Fleet shutdown is unavailable.");
+		return fullyQuitFleet();
+	}
+	if (fleetQuitInProgress) return;
 	const win = mainWindow;
 	if (!win) return;
 	// Clicking this shell-painted menu moves focus off the panel, so prefer the last-focused panel, else the focused contents, else the shell.
@@ -2106,8 +2147,8 @@ ipcMain.handle("menu:action", (_event, action: string) => {
 		case "help.about":
 			void dialog.showMessageBox(win, {
 				type: "info",
-				title: "About Agent Orchestrator",
-				message: "Agent Orchestrator",
+				title: `About ${app.getName()}`,
+				message: app.getName(),
 				detail: `Version ${app.getVersion()}`,
 				buttons: ["OK"],
 			});
@@ -2315,11 +2356,13 @@ ipcMain.handle("appState:setMigration", async (_event, migration: MigrationState
 });
 
 ipcMain.handle("updateSettings:get", async (): Promise<UpdateSettings> => {
+	if (fleetRuntime) return { enabled: false, channel: "latest", nightlyAck: false, feature: null };
 	const runFile = runFilePath();
 	if (!runFile) return { enabled: false, channel: "latest", nightlyAck: false, feature: null, macDifferentialUpdates: false };
 	return readUpdateSettings(path.dirname(runFile));
 });
 ipcMain.handle("updateSettings:set", async (_event, settings: UpdateSettings) => {
+	if (fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	await setUpdateSettings(path.dirname(runFile), settings);
@@ -2359,28 +2402,34 @@ ipcMain.handle("keybindings:setRecording", (event, active: unknown): void => {
 	keybindingRecordingActive = active;
 });
 
-ipcMain.handle("featureBuilds:list", () => listFeatureBuilds());
-ipcMain.handle("featureBuilds:getActive", () => getActiveFeatureBuild());
+ipcMain.handle("featureBuilds:list", () => fleetRuntime ? [] : listFeatureBuilds());
+ipcMain.handle("featureBuilds:getActive", () => fleetRuntime ? null : getActiveFeatureBuild());
 
-ipcMain.handle("updates:getStatus", (): UpdateStatus => getUpdateStatus());
+ipcMain.handle("updates:getStatus", (): UpdateStatus => fleetRuntime
+	? { state: "unsupported", message: "Update Fleet by replacing its application folder." }
+	: getUpdateStatus());
 ipcMain.handle("updates:check", async (_event, options?: UpdateCheckOptions) => {
+	if (fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	await checkForUpdatesNow(path.dirname(runFile), options);
 });
 ipcMain.handle("updates:returnHome", async (_event, requestId?: string) => {
+	if (fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	await returnToHome(path.dirname(runFile), requestId);
 });
 ipcMain.handle("updates:download", async (_event, requestId?: string) => {
+	if (fleetRuntime) return;
 	await downloadUpdateNow(requestId);
 });
-ipcMain.handle("updates:install", (_event, confirmedVersion?: string) => quitAndInstallUpdate(confirmedVersion));
+ipcMain.handle("updates:install", (_event, confirmedVersion?: string) => fleetRuntime ? undefined : quitAndInstallUpdate(confirmedVersion));
 // Retry after a failed macOS preparation: Squirrel can't reset a stalled staging
 // in-process, so restart AO like a manual quit-and-reopen. install-on-quit is
 // already off on the failed path, so quitting can't apply a half-prepared build.
 ipcMain.handle("updates:relaunch", () => {
+	if (fleetRuntime) return;
 	app.relaunch();
 	app.quit();
 });
@@ -2393,6 +2442,7 @@ ipcMain.handle("updates:relaunch", () => {
 // same boot gets the same answer and the marker is deleted only once.
 let postUpdateRelaunchPromise: Promise<boolean> | undefined;
 function detectPostUpdateRelaunch(): Promise<boolean> {
+	if (fleetRuntime) return Promise.resolve(false);
 	if (!postUpdateRelaunchPromise) {
 		const runFile = runFilePath();
 		postUpdateRelaunchPromise =
@@ -2573,6 +2623,7 @@ ipcMain.on(TRAY_RENDERER_READY_CHANNEL, (event) => {
 // Cloud auth IPC — cloud:getSession, cloud:signIn, cloud:signOut.
 // Data dir resolves to ~/.ao (prod) or ~/.ao/dev (dev) matching daemon conventions.
 function cloudDataDir(): string {
+	if (fleetRuntime) return fleetRuntime.root;
 	return isDev
 		? path.join(os.homedir(), ".ao", DEV_STATE_SUBDIR)
 		: path.join(os.homedir(), ".ao");
@@ -2661,7 +2712,7 @@ app.on("second-instance", (_event, argv) => {
 // A live updater additionally requires a signed + notarized build — see
 // frontend/docs/desktop-release.md.
 function initAutoUpdates(): void {
-	if (!app.isPackaged) return;
+	if (!app.isPackaged || fleetRuntime) return;
 	const runFile = runFilePath();
 	if (!runFile) return;
 	const stateDir = path.dirname(runFile);
@@ -2721,7 +2772,7 @@ async function writeAppStateOnLaunch(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-	if (app.isPackaged) {
+	if (app.isPackaged && !fleetRuntime) {
 		const { checkDesktopVersionFloor } = await import("./main/desktop-version-floor");
 		await checkDesktopVersionFloor().catch((err) =>
 			console.warn("desktop version floor check failed:", err),
@@ -2900,6 +2951,7 @@ setUpdateRestartFailureHandler(() => {
 
 let updateQuitDeadlineArmed = false;
 app.on("before-quit", (event) => {
+	if (fleetQuitInProgress) { event.preventDefault(); return; }
 	if (chatDraftRisks.length > 0 && !chatDraftQuitConfirmed) {
 		event.preventDefault();
 		if (confirmUnsafeChatDraftLeave(

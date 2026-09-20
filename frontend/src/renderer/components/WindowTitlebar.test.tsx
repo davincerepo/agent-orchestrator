@@ -4,9 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "./ui/tooltip";
 
-const { navigateMock } = vi.hoisted(() => ({
+const { navigateMock, flavor } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
+  flavor: { fleet: false },
 }));
+vi.mock("../../shared/desktop-flavor", () => ({ get isFleetPortable() { return flavor.fleet; } }));
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigateMock,
@@ -42,6 +44,7 @@ describe("WindowTitlebar", () => {
   }
 
   beforeEach(() => {
+    flavor.fleet = false;
     navigateMock.mockReset();
     actionMock = vi.fn(async (_action: string) => undefined);
     window.ao!.menu.action = actionMock;
@@ -87,6 +90,7 @@ describe("WindowTitlebar", () => {
 
     expect(screen.getByRole("button", { name: "View" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Help" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Fleet" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "File" }),
     ).not.toBeInTheDocument();
@@ -96,6 +100,17 @@ describe("WindowTitlebar", () => {
     expect(
       screen.queryByRole("button", { name: "Window" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("adds complete exit to Fleet's menu without changing ordinary close", async () => {
+    flavor.fleet = true;
+    const { WindowTitlebar } = await loadWindowTitlebar();
+    render(<TooltipProvider><WindowTitlebar /></TooltipProvider>);
+    await userEvent.click(screen.getByRole("button", { name: "Fleet" }));
+    expect(screen.getByRole("menuitem", { name: "Close Window" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: "Quit Completely…" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Quit Fleet completely?");
+    expect(actionMock).not.toHaveBeenCalled();
   });
 
   it("renders the back and forward navigation buttons", async () => {

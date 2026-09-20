@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/aoagents/agent-orchestrator/backend/internal/fleetprocess"
 	gopty "github.com/aymanbagabas/go-pty"
 	"golang.org/x/sys/windows"
 )
@@ -15,8 +16,9 @@ import (
 // conptyConn is the real ptyConn implementation backed by go-pty's ConPty
 // (Windows ConPTY API). Only compiled on Windows.
 type conptyConn struct {
-	pty gopty.ConPty
-	cmd *gopty.Cmd
+	pty         gopty.ConPty
+	cmd         *gopty.Cmd
+	releaseTree func()
 
 	doneOnce      sync.Once
 	doneC         chan struct{}
@@ -58,11 +60,19 @@ func newConPTY(cwd, shellCmd string, shellArgs []string) (ptyConn, error) {
 		_ = cp.Close()
 		return nil, fmt.Errorf("conpty: start command: %w", err)
 	}
+	releaseTree, err := fleetprocess.Contain(cmd.Process.Pid)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		_ = cp.Close()
+		return nil, fmt.Errorf("contain Fleet terminal process: %w", err)
+	}
 
 	c := &conptyConn{
-		pty:   cp,
-		cmd:   cmd,
-		doneC: make(chan struct{}),
+		pty:         cp,
+		cmd:         cmd,
+		releaseTree: releaseTree,
+		doneC:       make(chan struct{}),
 	}
 
 	go c.wait()
@@ -91,6 +101,7 @@ func (c *conptyConn) wait() {
 func (c *conptyConn) Read(b []byte) (int, error)  { return c.pty.Read(b) }
 func (c *conptyConn) Write(b []byte) (int, error) { return c.pty.Write(b) }
 func (c *conptyConn) Close() error {
+	c.releaseTree()
 	c.closeConsole()
 	c.disposeOnce.Do(func() {
 		c.disposeErr = errors.Join(
