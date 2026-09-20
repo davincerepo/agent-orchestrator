@@ -54,6 +54,10 @@ type conversation struct {
 	events          chan ports.ChatEvent
 	// Effective defaults returned when Codex opened or resumed this thread.
 	threadModel, threadEffort string
+	threadServiceTier         string
+	threadSettingsKnown       bool
+	threadSettingsRevision    uint64
+	settingsRefresh           *threadSettingsRefresh
 
 	mu      sync.Mutex
 	pending map[string]*parkedRequest
@@ -129,6 +133,7 @@ func (c *conversation) start(threadID, model, effort string) {
 	c.threadID = threadID
 	c.threadModel = model
 	c.threadEffort = effort
+	c.threadSettingsKnown = model != ""
 	go c.pump()
 }
 
@@ -172,6 +177,7 @@ func (c *conversation) pump() {
 			ThreadID string `json:"threadId"`
 		}
 		_ = json.Unmarshal(n.Params, &scope)
+		c.trackThreadSettings(n)
 
 		// The clock is passed in rather than read inside: a rate-limit reset arrives
 		// as an absolute instant and has to become a remaining duration, and a
@@ -311,6 +317,12 @@ func (c *conversation) SendTurn(ctx context.Context, msg ports.ChatUserMessage) 
 		params["clientUserMessageId"] = msg.ClientMessageID
 	}
 	applyTurnSettings(params, msg.Settings)
+	// A new turn can change effective defaults, including fields the provider
+	// resolves itself. Reconfirm on the next visit if no settings event arrives.
+	c.mu.Lock()
+	c.threadSettingsKnown = false
+	c.threadSettingsRevision++
+	c.mu.Unlock()
 
 	var resp struct {
 		Turn struct {
@@ -334,6 +346,9 @@ func (c *conversation) SendTurn(ctx context.Context, msg ports.ChatUserMessage) 
 // provider fall back to what the thread was started with, which is why a caller
 // that chooses nothing behaves exactly as it did before per-turn settings existed.
 func applyTurnSettings(params map[string]any, settings ports.ChatTurnSettings) {
+	if settings.ServiceTier != "" {
+		params["serviceTier"] = settings.ServiceTier
+	}
 	if settings.Model != "" {
 		params["model"] = settings.Model
 	}
@@ -373,21 +388,35 @@ func turnSandboxPolicy(sandbox string) map[string]any {
 // account, and gated by entitlement that AO cannot see. A table in AO would be
 // wrong within a week.
 func (c *conversation) ListModels(ctx context.Context) ([]ports.ChatModel, error) {
+	if err := c.ensureThreadSettings(ctx); err != nil {
+		return nil, err
+	}
 	models, err := listModels(ctx, c.conn)
 	if err != nil {
 		return nil, err
 	}
-	// Thread settings include the user's config; model/list only has generic defaults.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.threadSettingsKnown {
+		return nil, errors.New("Codex thread settings changed while reading models; reopen the session to retry")
+	}
+	// Only confirmed thread settings may replace the catalog's generic defaults.
+	found := false
 	for i := range models {
-		// An omitted turn model inherits thread/start (including config.toml),
-		// not model/list's generic catalog default. If the configured model is
-		// absent, leave no catalog default rather than advertise another model.
-		if c.threadModel != "" {
-			models[i].Default = models[i].ID == c.threadModel
-		}
-		if models[i].ID == c.threadModel && c.threadEffort != "" {
+		models[i].Default = models[i].ID == c.threadModel
+		if models[i].Default {
+			found = true
 			models[i].DefaultEffort = c.threadEffort
+			models[i].DefaultServiceTier = effectiveServiceTier(c.threadServiceTier)
 		}
+	}
+	if !found {
+		// A custom/current model can be absent from the catalog. Keep its real
+		// identity visible without inventing supported efforts or speed tiers.
+		models = append(models, ports.ChatModel{
+			ID: c.threadModel, DisplayName: c.threadModel, Default: true,
+			DefaultEffort: c.threadEffort, DefaultServiceTier: effectiveServiceTier(c.threadServiceTier),
+		})
 	}
 	return models, nil
 }
@@ -395,14 +424,17 @@ func (c *conversation) ListModels(ctx context.Context) ([]ports.ChatModel, error
 func listModels(ctx context.Context, connection *conn) ([]ports.ChatModel, error) {
 	type modelListResponse struct {
 		Data []struct {
-			ID          string `json:"id"`
-			Model       string `json:"model"`
-			DisplayName string `json:"displayName"`
-			Description string `json:"description"`
-			IsDefault   bool   `json:"isDefault"`
-			Hidden      bool   `json:"hidden"`
-			DefaultEff  string `json:"defaultReasoningEffort"`
-			Efforts     []struct {
+			ServiceTiers         []ports.ModelServiceTier `json:"serviceTiers"`
+			DefaultServiceTier   string                   `json:"defaultServiceTier"`
+			AdditionalSpeedTiers []string                 `json:"additionalSpeedTiers"`
+			ID                   string                   `json:"id"`
+			Model                string                   `json:"model"`
+			DisplayName          string                   `json:"displayName"`
+			Description          string                   `json:"description"`
+			IsDefault            bool                     `json:"isDefault"`
+			Hidden               bool                     `json:"hidden"`
+			DefaultEff           string                   `json:"defaultReasoningEffort"`
+			Efforts              []struct {
 				ReasoningEffort string `json:"reasoningEffort"`
 			} `json:"supportedReasoningEfforts"`
 		} `json:"data"`
@@ -444,8 +476,14 @@ func listModels(ctx context.Context, connection *conn) ([]ports.ChatModel, error
 				display = id
 			}
 			models = append(models, ports.ChatModel{
-				ID: id, DisplayName: display, Description: entry.Description,
-				Default: entry.IsDefault, Efforts: efforts, DefaultEffort: entry.DefaultEff,
+				ServiceTiers:       modelServiceTiers(entry.ServiceTiers, entry.AdditionalSpeedTiers),
+				DefaultServiceTier: entry.DefaultServiceTier,
+				ID:                 id,
+				DisplayName:        display,
+				Description:        entry.Description,
+				Default:            entry.IsDefault,
+				Efforts:            efforts,
+				DefaultEffort:      entry.DefaultEff,
 			})
 		}
 		if resp.NextCursor == nil || *resp.NextCursor == "" {
@@ -1058,4 +1096,17 @@ func approvalReply(method string, decision ports.ChatDecision) any {
 		return map[string]any{"decision": json.RawMessage(decision.Raw)}
 	}
 	return map[string]any{"decision": decision.ID}
+}
+
+// modelServiceTiers supports legacy Codex catalogs without inventing capabilities.
+func modelServiceTiers(tiers []ports.ModelServiceTier, legacy []string) []ports.ModelServiceTier {
+	if tiers != nil {
+		return tiers
+	}
+	for _, id := range legacy {
+		if id == "priority" {
+			tiers = append(tiers, ports.ModelServiceTier{ID: id, Name: "Fast"})
+		}
+	}
+	return tiers
 }

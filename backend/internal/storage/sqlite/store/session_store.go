@@ -507,6 +507,8 @@ func rowToRecord(row gen.GetSessionRow) domain.SessionRecord {
 			ControllerGeneration:             row.ControllerGeneration,
 			Model:                            row.Model,
 			Permissions:                      domain.PermissionMode(row.SessionPermissions),
+			ReasoningEffort:                  row.ReasoningEffort,
+			ServiceTier:                      row.ServiceTier,
 		},
 		CleanupGeneration: row.CleanupGeneration,
 		CreatedAt:         row.CreatedAt,
@@ -581,6 +583,8 @@ func recordToInsert(rec domain.SessionRecord, num int64) gen.InsertSessionParams
 		SessionPermissions:               string(rec.Metadata.Permissions),
 		CreatedAt:                        rec.CreatedAt,
 		UpdatedAt:                        rec.UpdatedAt,
+		ReasoningEffort:                  rec.Metadata.ReasoningEffort,
+		ServiceTier:                      rec.Metadata.ServiceTier,
 	}
 }
 
@@ -636,6 +640,8 @@ func recordToUpdate(rec domain.SessionRecord) gen.UpdateSessionParams {
 		ControllerGeneration:             rec.Metadata.ControllerGeneration,
 		Model:                            rec.Metadata.Model,
 		UpdatedAt:                        rec.UpdatedAt,
+		ReasoningEffort:                  rec.Metadata.ReasoningEffort,
+		ServiceTier:                      rec.Metadata.ServiceTier,
 	}
 }
 

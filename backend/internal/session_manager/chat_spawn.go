@@ -136,6 +136,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 		Env:                     env,
 		Model:                   agentConfig.Model,
 		Effort:                  agentConfig.Effort,
+		ServiceTier:             agentConfig.ServiceTier,
 		Permissions:             agentConfig.Permissions,
 		SystemPrompt:            in.systemPrompt,
 		AdditionalDirectories:   workspaceProjectDirectories(in.workspace.Path, in.workspaceProject),
@@ -169,6 +170,8 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 				ControllerGeneration:      started.ControllerGeneration,
 				BrowserCapabilityVerifier: in.record.Metadata.BrowserCapabilityVerifier,
 				Model:                     agentConfig.Model,
+				ReasoningEffort:           agentConfig.Effort,
+				ServiceTier:               agentConfig.ServiceTier,
 			}
 			committedConversation, commitErr := m.markChatControllerSpawned(
 				ctx, id, metadata, started.Conversation, started.ProviderBoundary,
@@ -332,7 +335,7 @@ func (m *Manager) resumeChatController(
 		return RestoreResult{}, fmt.Errorf("%s %s: switched continuation: %w", operation, rec.ID, err)
 	}
 
-	agentConfig := restoredAgentConfig(rec, project.Config)
+	agentConfig := normalizeAgentConfigForHarness(rec.Harness, restoredAgentConfig(rec, project.Config))
 	if rec.Metadata.Permissions != "" {
 		agentConfig.Permissions = rec.Metadata.Permissions
 	}
@@ -366,6 +369,7 @@ func (m *Manager) resumeChatController(
 		Env:                     env,
 		Model:                   agentConfig.Model,
 		Effort:                  agentConfig.Effort,
+		ServiceTier:             agentConfig.ServiceTier,
 		Permissions:             agentConfig.Permissions,
 		SystemPrompt:            systemPrompt,
 		AdditionalDirectories:   additionalDirectories,

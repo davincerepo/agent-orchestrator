@@ -247,8 +247,9 @@ func (s *Store) CommitSessionControllerEpoch(
 	source, target domain.SessionMode,
 	nativeID string,
 	now time.Time,
+	modelParameters ...domain.AgentConfig,
 ) (bool, error) {
-	return s.commitSessionControllerEpoch(ctx, id, source, target, nativeID, false, now)
+	return s.commitSessionControllerEpoch(ctx, id, source, target, nativeID, false, now, modelParameters...)
 }
 
 // RestoreSessionControllerEpoch atomically restores the source interface after
@@ -272,7 +273,11 @@ func (s *Store) commitSessionControllerEpoch(
 	nativeID string,
 	restore bool,
 	now time.Time,
+	modelParameters ...domain.AgentConfig,
 ) (bool, error) {
+	if len(modelParameters) > 1 {
+		return false, fmt.Errorf("multiple controller model parameter snapshots")
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	tx, err := s.writeDB.BeginTx(ctx, nil)
@@ -308,6 +313,24 @@ func (s *Store) commitSessionControllerEpoch(
 	}
 	if rows == 0 {
 		return false, nil
+	}
+	if len(modelParameters) == 1 {
+		config := modelParameters[0]
+		if err := config.Validate(); err != nil {
+			return false, err
+		}
+		if err := q.SetInterfaceSessionModelParameters(ctx, gen.SetInterfaceSessionModelParametersParams{
+			ID: id, Model: config.Model, ReasoningEffort: config.Effort, ServiceTier: config.ServiceTier,
+		}); err != nil {
+			return false, fmt.Errorf("save interface model parameters: %w", err)
+		}
+		if err := q.SetInterfaceConversationModelParameters(ctx, gen.SetInterfaceConversationModelParametersParams{
+			SessionID: &id, Model: sql.NullString{String: config.Model, Valid: config.Model != ""},
+			ReasoningEffort: sql.NullString{String: config.Effort, Valid: config.Effort != ""},
+			ServiceTier:     sql.NullString{String: config.ServiceTier, Valid: config.ServiceTier != ""}, UpdatedAt: now,
+		}); err != nil {
+			return false, fmt.Errorf("save interface conversation parameters: %w", err)
+		}
 	}
 	if source == domain.SessionModeChat && target == domain.SessionModeTUI && nativeID == "" {
 		// A fresh TUI will choose its own native identity. Release the unused

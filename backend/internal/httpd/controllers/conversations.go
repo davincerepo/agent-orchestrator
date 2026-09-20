@@ -441,6 +441,7 @@ func (c *ConversationsController) setSettings(w http.ResponseWriter, r *http.Req
 		domain.SessionID(chi.URLParam(r, "sessionId")), domain.ConversationSettings{
 			Model:           req.Model,
 			ReasoningEffort: req.ReasoningEffort,
+			ServiceTier:     req.ServiceTier,
 			ApprovalMode:    approval,
 		})
 	if err != nil {
@@ -460,12 +461,14 @@ func conversationModelsResponse(
 	}
 	for _, model := range models {
 		out.Models = append(out.Models, ConversationModelResponse{
-			ID:            model.ID,
-			DisplayName:   model.DisplayName,
-			Description:   model.Description,
-			Default:       model.Default,
-			Efforts:       model.Efforts,
-			DefaultEffort: model.DefaultEffort,
+			ID:                 model.ID,
+			DisplayName:        model.DisplayName,
+			Description:        model.Description,
+			Default:            model.Default,
+			Efforts:            model.Efforts,
+			ServiceTiers:       model.ServiceTiers,
+			DefaultServiceTier: model.DefaultServiceTier,
+			DefaultEffort:      model.DefaultEffort,
 		})
 	}
 	return out
@@ -505,6 +508,7 @@ func turnSettingsPayload(settings domain.ConversationSettings) ConversationTurnS
 	return ConversationTurnSettingsPayload{
 		Model:           settings.Model,
 		ReasoningEffort: settings.ReasoningEffort,
+		ServiceTier:     settings.ServiceTier,
 		ApprovalMode:    string(settings.ApprovalMode),
 	}
 }
@@ -750,6 +754,8 @@ func decodeConversationBody(w http.ResponseWriter, r *http.Request, into any) bo
 // codes, so a client can tell a permanent answer from a retryable one.
 func writeConversationError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, chatsvc.ErrModelParameters):
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "CHAT_MODEL_PARAMETERS_INVALID", err.Error(), nil)
 	case errors.Is(err, ports.ErrSessionNotFound):
 		envelope.WriteAPIError(w, r, http.StatusNotFound, "not_found",
 			"SESSION_NOT_FOUND", "session not found", nil)

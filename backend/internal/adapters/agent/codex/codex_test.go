@@ -662,6 +662,8 @@ func TestGetConfigSpecReportsModelField(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []ports.ConfigField{
+		{Key: "effort", Type: ports.ConfigFieldString, Description: "Reasoning effort id advertised by the selected model."},
+		{Key: "serviceTier", Type: ports.ConfigFieldString, Description: "default (Fast off) or priority (Fast on)."},
 		{
 			Key:         "model",
 			Type:        ports.ConfigFieldString,

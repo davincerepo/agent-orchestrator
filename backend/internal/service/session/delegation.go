@@ -32,6 +32,7 @@ type DelegateTaskInput struct {
 	ApprovalMode   domain.PermissionMode
 	RequestedMode  domain.SessionMode
 	Attachments    []ports.SpawnAttachment
+	ServiceTier    string
 }
 
 // DelegateTaskOutcome identifies the spawned worker. OrchestratorID remains
@@ -72,6 +73,7 @@ func (s *Service) DelegateTask(ctx context.Context, in DelegateTaskInput) (Deleg
 			Model:       strings.TrimSpace(in.Model),
 			Effort:      effort,
 			Permissions: in.ApprovalMode,
+			ServiceTier: in.ServiceTier,
 		},
 		EffortOverride: effortOverride,
 		RequestedMode:  in.RequestedMode,

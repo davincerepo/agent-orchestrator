@@ -28,6 +28,7 @@ type ChatControllerStart struct {
 	Env                   map[string]string
 	Model                 string
 	Effort                string
+	ServiceTier           string
 	Permissions           PermissionMode
 	SystemPrompt          string
 	AdditionalDirectories []string

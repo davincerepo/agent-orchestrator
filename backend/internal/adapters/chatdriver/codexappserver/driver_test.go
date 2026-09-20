@@ -281,6 +281,8 @@ func TestStartCompletesHandshakeAndOpensThread(t *testing.T) {
 
 func TestResumeReconnectsInitializedHostWithoutNativeResume(t *testing.T) {
 	d, srv := newTestDriver(t)
+	srv.reply("thread/loaded/list", `{"data":["thread-survived"]}`)
+	srv.reply("thread/resume", `{"thread":{"id":"thread-survived"},"model":"gpt-test","reasoningEffort":"xhigh"}`)
 	prepareCalls := 0
 	proc, err := d.spawn(context.Background(), "codex", "/tmp/ws", nil)
 	if err != nil {
@@ -320,7 +322,7 @@ func TestResumeReconnectsInitializedHostWithoutNativeResume(t *testing.T) {
 	if _, err := lister.ListModels(context.Background()); err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	request := srv.awaitFrame(func(f frame) bool { return f.Method == "model/list" })
+	request := srv.awaitFrame(func(f frame) bool { return f.Method == "thread/loaded/list" })
 	if request.ID == nil || string(*request.ID) != "42" {
 		t.Fatalf("first request id after reconnect = %v, want 42", request.ID)
 	}

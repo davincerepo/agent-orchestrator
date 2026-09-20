@@ -1,3 +1,4 @@
+import { ServiceTierControl, findParameterModel, resolveServiceTier } from "./settings/ModelParametersControl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -143,9 +144,11 @@ function SettingsBody({
 		orchestratorAgent: config.orchestrator?.agent ?? "",
 		workerModel: config.worker?.agentConfig?.model ?? config.agentConfig?.model ?? "",
 		workerEffort: config.worker?.agentConfig?.effort ?? config.agentConfig?.effort ?? "",
+		workerServiceTier: config.worker?.agentConfig?.serviceTier ?? config.agentConfig?.serviceTier ?? "default",
 		workerPermissions: config.worker?.agentConfig?.permissions ?? config.agentConfig?.permissions ?? "",
 		orchestratorModel: config.orchestrator?.agentConfig?.model ?? config.agentConfig?.model ?? "",
 		orchestratorEffort: config.orchestrator?.agentConfig?.effort ?? config.agentConfig?.effort ?? "",
+		orchestratorServiceTier: config.orchestrator?.agentConfig?.serviceTier ?? config.agentConfig?.serviceTier ?? "default",
 		orchestratorPermissions: config.orchestrator?.agentConfig?.permissions ?? config.agentConfig?.permissions ?? "",
 		workerMode: config.worker?.agentConfig?.mode ?? config.agentConfig?.mode ?? "",
 		orchestratorMode: config.orchestrator?.agentConfig?.mode ?? config.agentConfig?.mode ?? "",
@@ -153,6 +156,7 @@ function SettingsBody({
 		reviewerModel: config.reviewers?.[0]?.agentConfig?.model ?? config.agentConfig?.model ?? "",
 		reviewerMode: config.reviewers?.[0]?.agentConfig?.mode ?? config.agentConfig?.mode ?? "",
 		reviewerEffort: config.reviewers?.[0]?.agentConfig?.effort ?? config.agentConfig?.effort ?? "",
+		reviewerServiceTier: config.reviewers?.[0]?.agentConfig?.serviceTier ?? config.agentConfig?.serviceTier ?? "default",
 		reviewerPermissions: config.reviewers?.[0]?.agentConfig?.permissions ?? config.agentConfig?.permissions ?? "",
 		autoReview: config.autoReview ?? false,
 		intakeEnabled: intake.enabled ?? false,
@@ -196,6 +200,7 @@ function SettingsBody({
 				model: _legacyModel,
 				mode: _legacyMode,
 				effort: _legacyEffort,
+				serviceTier: _legacyServiceTier,
 				permissions: _legacyPermissions,
 				...sharedAgentConfig
 			} = config.agentConfig ?? {};
@@ -208,7 +213,7 @@ function SettingsBody({
 						worker: {
 							...config.worker,
 							agent: form.workerAgent,
-							agentConfig: buildRoleAgentConfig(config.worker?.agentConfig, form.workerModel, form.workerMode, form.workerAgent === "codex" ? form.workerEffort : "", form.workerPermissions),
+							agentConfig: buildRoleAgentConfig(config.worker?.agentConfig, form.workerModel, form.workerMode, form.workerAgent === "codex" ? form.workerEffort : "", form.workerPermissions, form.workerAgent === "codex" ? form.workerServiceTier : ""),
 						},
 						orchestrator: {
 							...config.orchestrator,
@@ -219,6 +224,7 @@ function SettingsBody({
 								form.orchestratorMode,
 								form.orchestratorAgent === "codex" ? form.orchestratorEffort : "",
 								form.orchestratorPermissions,
+								form.orchestratorAgent === "codex" ? form.orchestratorServiceTier : "",
 							),
 						},
 						agentConfig: blankToUndefined({
@@ -236,7 +242,7 @@ function SettingsBody({
 						worker: {
 							...config.worker,
 							agent: form.workerAgent,
-							agentConfig: buildRoleAgentConfig(config.worker?.agentConfig, form.workerModel, form.workerMode, form.workerAgent === "codex" ? form.workerEffort : "", form.workerPermissions),
+							agentConfig: buildRoleAgentConfig(config.worker?.agentConfig, form.workerModel, form.workerMode, form.workerAgent === "codex" ? form.workerEffort : "", form.workerPermissions, form.workerAgent === "codex" ? form.workerServiceTier : ""),
 						},
 						orchestrator: {
 							...config.orchestrator,
@@ -247,6 +253,7 @@ function SettingsBody({
 								form.orchestratorMode,
 								form.orchestratorAgent === "codex" ? form.orchestratorEffort : "",
 								form.orchestratorPermissions,
+								form.orchestratorAgent === "codex" ? form.orchestratorServiceTier : "",
 							),
 						},
 						agentConfig: blankToUndefined({
@@ -256,7 +263,7 @@ function SettingsBody({
 						reviewers: form.reviewerHarness
 							? [{
 									harness: form.reviewerHarness,
-									agentConfig: buildRoleAgentConfig(existingReviewerAgentConfig, form.reviewerModel, form.reviewerMode, form.reviewerHarness === "codex" ? form.reviewerEffort : "", form.reviewerPermissions),
+									agentConfig: buildRoleAgentConfig(existingReviewerAgentConfig, form.reviewerModel, form.reviewerMode, form.reviewerHarness === "codex" ? form.reviewerEffort : "", form.reviewerPermissions, form.reviewerHarness === "codex" ? form.reviewerServiceTier : ""),
 								}]
 							: undefined,
 						trackerIntake: buildIntake(intakeForm, config.trackerIntake),
@@ -452,7 +459,7 @@ function SettingsBody({
 								disabled={agentsQuery.isFetching && agentCatalog === undefined}
 								invalid={validationError !== null && form.workerAgent === ""}
 								onChange={(v) =>
-									setForm((f) => ({ ...f, workerAgent: v, workerModel: "", workerMode: "", workerEffort: "" }))
+									setForm((f) => ({ ...f, workerAgent: v, workerModel: "", workerMode: "", workerEffort: "", workerServiceTier: "default" }))
 								}
 							/>
 						}
@@ -464,6 +471,8 @@ function SettingsBody({
 								model={form.workerModel}
 								mode={form.workerMode}
 								effort={form.workerEffort}
+								serviceTier={form.workerServiceTier}
+								onServiceTierChange={(workerServiceTier) => setForm((f) => ({ ...f, workerServiceTier }))}
 								onModelChange={(workerModel) => setForm((f) => ({ ...f, workerModel }))}
 								onModeChange={(workerMode) => setForm((f) => ({ ...f, workerMode }))}
 								onEffortChange={(workerEffort) => setForm((f) => ({ ...f, workerEffort }))}
@@ -486,7 +495,7 @@ function SettingsBody({
 										orchestratorAgent: v,
 										orchestratorModel: "",
 										orchestratorMode: "",
-										orchestratorEffort: "",
+										orchestratorEffort: "", orchestratorServiceTier: "default",
 									}))
 								}
 							/>
@@ -499,6 +508,8 @@ function SettingsBody({
 								model={form.orchestratorModel}
 								mode={form.orchestratorMode}
 								effort={form.orchestratorEffort}
+								serviceTier={form.orchestratorServiceTier}
+								onServiceTierChange={(orchestratorServiceTier) => setForm((f) => ({ ...f, orchestratorServiceTier }))}
 								onModelChange={(orchestratorModel) => setForm((f) => ({ ...f, orchestratorModel }))}
 								onModeChange={(orchestratorMode) => setForm((f) => ({ ...f, orchestratorMode }))}
 								onEffortChange={(orchestratorEffort) => setForm((f) => ({ ...f, orchestratorEffort }))}
@@ -541,7 +552,7 @@ function SettingsBody({
 									...f,
 									reviewerHarness: v,
 									...(v !== f.reviewerHarness ? {
-										reviewerModel: "", reviewerMode: "", reviewerEffort: "",
+										reviewerModel: "", reviewerMode: "", reviewerEffort: "", reviewerServiceTier: "default",
 										reviewerPermissions: "",
 									} : {}),
 									}))
@@ -561,6 +572,8 @@ function SettingsBody({
 								model={form.reviewerModel}
 								mode={form.reviewerMode}
 								effort={form.reviewerEffort}
+								serviceTier={form.reviewerServiceTier}
+								onServiceTierChange={(reviewerServiceTier) => setForm((f) => ({ ...f, reviewerServiceTier }))}
 								onModelChange={(reviewerModel) => setForm((f) => ({ ...f, reviewerModel }))}
 								onModeChange={(reviewerMode) => setForm((f) => ({ ...f, reviewerMode }))}
 								onEffortChange={(reviewerEffort) => setForm((f) => ({ ...f, reviewerEffort }))}
@@ -673,6 +686,8 @@ function AgentModelField({
 	model,
 	mode,
 	effort,
+	serviceTier,
+	onServiceTierChange,
 	onModelChange,
 	onModeChange,
 	onEffortChange,
@@ -684,6 +699,8 @@ function AgentModelField({
 	model: string;
 	mode: string;
 	effort: string;
+	serviceTier: string;
+	onServiceTierChange: (value: string) => void;
 	onModelChange: (value: string) => void;
 	onModeChange: (value: string) => void;
 	onEffortChange: (value: string) => void;
@@ -760,10 +777,12 @@ function AgentModelField({
 	const selectCatalogModel = (value: string) => {
 		onModelChange(value);
 		onModeChange("");
+		onServiceTierChange(resolveServiceTier(findParameterModel(catalog?.models, value), serviceTier));
 	};
 	const selectCustomModel = (value: string) => {
 		onModelChange(value);
 		onModeChange("");
+		onServiceTierChange(resolveServiceTier(findParameterModel(catalog?.models, value), serviceTier));
 	};
 	return (
 		<>
@@ -789,6 +808,7 @@ function AgentModelField({
 							roleLabel: t(`settings.models.${role}Role`),
 						} : undefined}
 					/>
+					{agentId === "codex" && <ServiceTierControl model={findParameterModel(catalog?.models, model)} value={serviceTier} onChange={onServiceTierChange} disabled={query.isFetching} />}
 				</div>
 			</SettingsRow>
 			{warning && <p className="px-1 text-xs leading-row text-warning">{warning}</p>}
@@ -874,8 +894,11 @@ function buildRoleAgentConfig(
 	mode: string,
 	effort: string,
 	permissions: string,
+	serviceTier: string,
 ): components["schemas"]["AgentConfig"] | undefined {
 	const next = { ...existing };
+	if (serviceTier) next.serviceTier = serviceTier;
+	else delete next.serviceTier;
 	if (model) next.model = model;
 	else delete next.model;
 	if (mode) next.mode = mode;

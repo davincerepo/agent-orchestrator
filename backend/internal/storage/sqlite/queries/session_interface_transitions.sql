@@ -1,3 +1,11 @@
+-- Model parameters move with the controller epoch in the same transaction.
+-- Empty strings/NULL clear stale AO overrides instead of inheriting them.
+-- name: SetInterfaceSessionModelParameters :exec
+UPDATE sessions SET model = ?, reasoning_effort = ?, service_tier = ? WHERE id = ?;
+
+-- name: SetInterfaceConversationModelParameters :exec
+UPDATE conversations SET model = ?, reasoning_effort = ?, service_tier = ?, updated_at = ? WHERE session_id = ?;
+
 -- name: InsertSessionInterfaceTransition :one
 INSERT INTO session_interface_transitions (
     id, session_id, source_mode, target_mode, policy, history_policy, phase,

@@ -321,8 +321,7 @@ func (s *Service) EditMessage(
 					provider, err = driver.Resume(operationCtx, ports.ChatResumeConfig{
 						SessionID: cfg.SessionID, ProviderConversationID: providerConversationID,
 						DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath, Env: launchEnv,
-						Model: cfg.Model, Effort: cfg.Effort,
-						Permissions: cfg.Permissions, SystemPrompt: cfg.SystemPrompt,
+						Model: cfg.Model, Effort: cfg.Effort, ServiceTier: cfg.ServiceTier, Permissions: cfg.Permissions, SystemPrompt: cfg.SystemPrompt,
 						ProviderScopeID:       sourceBranch.ProviderScopeID,
 						ProviderIDsScoped:     sourceBranch.ProviderIDsScoped,
 						AdditionalDirectories: cfg.AdditionalDirectories, MCPServers: cfg.MCPServers,
@@ -360,8 +359,7 @@ func (s *Service) EditMessage(
 			} else {
 				provider, err = driver.Start(operationCtx, ports.ChatStartConfig{
 					SessionID: cfg.SessionID, DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath,
-					Env: launchEnv, Model: cfg.Model, Effort: cfg.Effort,
-					Permissions:  cfg.Permissions,
+					Env: launchEnv, Model: cfg.Model, Effort: cfg.Effort, ServiceTier: cfg.ServiceTier, Permissions: cfg.Permissions,
 					SystemPrompt: cfg.SystemPrompt, AdditionalDirectories: cfg.AdditionalDirectories,
 					MCPServers: cfg.MCPServers, ProviderScopeID: providerScopeID, ProviderIDsScoped: true,
 				})
@@ -676,7 +674,7 @@ func encodeEditDeliveryRequest(turnID string, msg ports.ChatUserMessage) (string
 		SourceTurnID: turnID, Text: msg.Text, Content: msg.Content,
 		Origin: normalizeOrigin(msg.Origin),
 		Settings: deliveryRequestSettings{
-			Model: msg.Settings.Model, Effort: msg.Settings.Effort, Approval: msg.Settings.Approval,
+			Model: msg.Settings.Model, Effort: msg.Settings.Effort, ServiceTier: msg.Settings.ServiceTier, Approval: msg.Settings.Approval,
 		},
 	})
 	if err != nil {
@@ -902,8 +900,7 @@ func (s *Service) activateBranchLocked(ctx context.Context, id domain.SessionID,
 	provider, err := driver.Resume(operationCtx, ports.ChatResumeConfig{
 		SessionID: cfg.SessionID, ProviderConversationID: branch.ProviderConversationID,
 		DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath, Env: launchEnv,
-		Model: cfg.Model, Effort: cfg.Effort,
-		Permissions: cfg.Permissions, SystemPrompt: cfg.SystemPrompt,
+		Model: cfg.Model, Effort: cfg.Effort, ServiceTier: cfg.ServiceTier, Permissions: cfg.Permissions, SystemPrompt: cfg.SystemPrompt,
 		ProviderScopeID:       branch.ProviderScopeID,
 		ProviderIDsScoped:     branch.ProviderIDsScoped,
 		AdditionalDirectories: cfg.AdditionalDirectories, MCPServers: cfg.MCPServers,
@@ -956,6 +953,9 @@ func (s *Service) branchLaunchConfig(
 	if err != nil {
 		return StartConfig{}, nil, fmt.Errorf("chat driver for %s: %w", cfg.Harness, err)
 	}
+	settings := source.Settings()
+	cfg.Effort = settings.ReasoningEffort
+	cfg.ServiceTier = settings.ServiceTier
 	return cloneStartConfig(cfg), driver, nil
 }
 
@@ -1002,8 +1002,7 @@ func (s *Service) restoreClosedSourceController(
 	provider, err := driver.Resume(recoveryCtx, ports.ChatResumeConfig{
 		SessionID: cfg.SessionID, ProviderConversationID: providerConversationID,
 		DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath, Env: launchEnv,
-		Model: cfg.Model, Effort: cfg.Effort,
-		Permissions: cfg.Permissions, SystemPrompt: cfg.SystemPrompt,
+		Model: cfg.Model, Effort: cfg.Effort, ServiceTier: cfg.ServiceTier, Permissions: cfg.Permissions, SystemPrompt: cfg.SystemPrompt,
 		ProviderScopeID:       branch.ProviderScopeID,
 		ProviderIDsScoped:     branch.ProviderIDsScoped,
 		AdditionalDirectories: cfg.AdditionalDirectories, MCPServers: cfg.MCPServers,
@@ -1171,7 +1170,8 @@ func truncateAtWord(title string, limit int) string {
 // provider port's Go field names. A later refactor must not turn a safe retry into
 // an idempotency conflict after an app upgrade.
 type deliveryRequestSettings struct {
-	Model    string               `json:"model,omitempty"`
-	Effort   string               `json:"effort,omitempty"`
-	Approval ports.PermissionMode `json:"approval,omitempty"`
+	ServiceTier string               `json:"serviceTier,omitempty"`
+	Model       string               `json:"model,omitempty"`
+	Effort      string               `json:"effort,omitempty"`
+	Approval    ports.PermissionMode `json:"approval,omitempty"`
 }

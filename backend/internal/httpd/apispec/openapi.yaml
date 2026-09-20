@@ -6042,6 +6042,52 @@ paths:
       summary: Switch a logical AO session to another agent harness
       tags:
       - sessions
+  /api/v1/sessions/{sessionId}/terminal-model-parameters:
+    get:
+      operationId: getTerminalModelParameters
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminalModelParametersResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Read the terminal's saved native model parameters without changing
+        configuration
+      tags:
+      - sessions
   /api/v1/sessions/{sessionId}/workspace/diffs:
     post:
       operationId: getSessionWorkspaceDiffs
@@ -7277,6 +7323,8 @@ components:
           type: string
         permissions:
           type: string
+        serviceTier:
+          type: string
       type: object
     AgentInfo:
       properties:
@@ -7423,6 +7471,8 @@ components:
       properties:
         defaultEffort:
           type: string
+        defaultServiceTier:
+          type: string
         efforts:
           items:
             type: string
@@ -7435,6 +7485,10 @@ components:
           type: string
         provider:
           type: string
+        serviceTiers:
+          items:
+            $ref: '#/components/schemas/ModelServiceTier'
+          type: array
       required:
       - id
       - label
@@ -8881,6 +8935,8 @@ components:
           type: boolean
         defaultEffort:
           type: string
+        defaultServiceTier:
+          type: string
         description:
           type: string
         displayName:
@@ -8891,6 +8947,10 @@ components:
           type: array
         id:
           type: string
+        serviceTiers:
+          items:
+            $ref: '#/components/schemas/ModelServiceTier'
+          type: array
       required:
       - id
       - displayName
@@ -9180,6 +9240,11 @@ components:
           type: string
         reasoningEffort:
           type: string
+        serviceTier:
+          enum:
+          - default
+          - priority
+          type: string
       type: object
     ConversationUsagePayload:
       properties:
@@ -9299,6 +9364,11 @@ components:
           maxLength: 256
           type: string
         projectId:
+          type: string
+        serviceTier:
+          enum:
+          - default
+          - priority
           type: string
       required:
       - projectId
@@ -10275,6 +10345,18 @@ components:
       - hostname
       - location
       - lastError
+      type: object
+    ModelServiceTier:
+      properties:
+        description:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+      required:
+      - id
+      - name
       type: object
     MuteDeviceRequest:
       properties:
@@ -11859,6 +11941,11 @@ components:
         prompt:
           maxLength: 16384
           type: string
+        serviceTier:
+          enum:
+          - default
+          - priority
+          type: string
         trackerProvider:
           enum:
           - github
@@ -12154,6 +12241,23 @@ components:
       required:
       - ready
       - requirements
+      type: object
+    TerminalModelParametersResponse:
+      properties:
+        model:
+          type: string
+        reasoningEffort:
+          type: string
+        serviceTier:
+          enum:
+          - ""
+          - default
+          - priority
+          type: string
+        supported:
+          type: boolean
+      required:
+      - supported
       type: object
     TrackerIntakeConfig:
       properties:

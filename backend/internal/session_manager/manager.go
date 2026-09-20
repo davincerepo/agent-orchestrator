@@ -238,7 +238,7 @@ type lifecycleRecorder interface {
 	MarkSpawned(ctx context.Context, id domain.SessionID, metadata domain.SessionMetadata) error
 	MarkChatReconnected(ctx context.Context, id domain.SessionID, metadata domain.SessionMetadata) error
 	MarkChatSpawned(ctx context.Context, id domain.SessionID, metadata domain.SessionMetadata, boundary domain.ConversationBranch) error
-	CommitControllerEpoch(ctx context.Context, id domain.SessionID, source, target domain.SessionMode, nativeConversationID string, startFresh bool) (bool, error)
+	CommitControllerEpoch(ctx context.Context, id domain.SessionID, source, target domain.SessionMode, nativeConversationID string, startFresh bool, modelParameters ...domain.AgentConfig) (bool, error)
 	RestoreControllerEpoch(ctx context.Context, id domain.SessionID, source, target domain.SessionMode, nativeConversationID string, startFresh bool) (bool, error)
 	ConfirmAgentSwitchSourceStopped(ctx context.Context, confirmation domain.AgentSwitchSourceStopConfirmation) (bool, error)
 	ActivateAgentSwitchTarget(ctx context.Context, activation domain.AgentSwitchTargetActivation) (bool, error)
@@ -1098,7 +1098,9 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		// The user-visible resolved selection is Model for regular harnesses and
 		// Mode for adapters whose catalog is a mode list (e.g. Amp). If an explicit
 		// Model override exists it wins; otherwise fall back to the resolved Mode.
-		Model: resolvedModelForMetadata(cfg.Harness, agentConfig, adapterConfig),
+		Model:           resolvedModelForMetadata(cfg.Harness, agentConfig, adapterConfig),
+		ReasoningEffort: adapterConfig.Effort,
+		ServiceTier:     adapterConfig.ServiceTier,
 	}
 	if prompt != "" {
 		metadata.LatestUserPromptAt = m.clock()
@@ -1135,6 +1137,7 @@ func (m *Manager) resolveChatAgentConfig(ctx context.Context, cfg ports.SpawnCon
 		resolved.Effort = requested.Effort
 	}
 	if cfg.Harness != domain.HarnessCodex {
+		resolved.ServiceTier = ""
 		resolved.Effort = ""
 		return resolved, nil
 	}
@@ -1605,18 +1608,31 @@ func effectiveAgentConfig(harness domain.AgentHarness, kind domain.SessionKind, 
 	if override.Permissions != "" {
 		merged.Permissions = override.Permissions
 	}
+	if harnessMatches && override.ServiceTier != "" {
+		merged.ServiceTier = override.ServiceTier
+	}
 	return merged
 }
 
+// restoredAgentConfig preserves recorded model parameters independently of
+// later project defaults, alongside the Claude/Codex native model selection.
 func restoredAgentConfig(rec domain.SessionRecord, cfg domain.ProjectConfig) ports.AgentConfig {
 	merged := effectiveAgentConfig(rec.Harness, rec.Kind, cfg)
-	if rec.Harness == domain.HarnessClaudeCode {
+	merged.Effort = rec.Metadata.ReasoningEffort
+	merged.ServiceTier = rec.Metadata.ServiceTier
+	if rec.Harness == domain.HarnessClaudeCode || rec.Harness == domain.HarnessCodex {
+		// A blank snapshot means either agent default or an older session whose
+		// selection was not recorded. Leave it unset so native resume can keep
+		// its own model instead of overriding it with today's project defaults.
 		merged.Model = rec.Metadata.Model
 	}
 	return merged
 }
 
 func applySpawnAgentConfig(base, override ports.AgentConfig) ports.AgentConfig {
+	if override.ServiceTier != "" {
+		base.ServiceTier = override.ServiceTier
+	}
 	if override.Model != "" {
 		base.Model = override.Model
 	}
@@ -1643,6 +1659,10 @@ func applySpawnAgentConfig(base, override ports.AgentConfig) ports.AgentConfig {
 // reads Config.Mode). The original cfg is left unchanged so callers can still
 // persist the resolved Model separately.
 func normalizeAgentConfigForHarness(harness domain.AgentHarness, cfg ports.AgentConfig) ports.AgentConfig {
+	if harness != domain.HarnessCodex {
+		cfg.Effort = ""
+		cfg.ServiceTier = ""
+	}
 	model := strings.TrimSpace(cfg.Model)
 	if model == "" {
 		return cfg

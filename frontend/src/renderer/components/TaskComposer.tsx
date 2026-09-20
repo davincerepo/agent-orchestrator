@@ -1,3 +1,4 @@
+import { ServiceTierControl, findParameterModel, resolveServiceTier } from "./settings/ModelParametersControl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	TaskComposerView,
@@ -43,6 +44,7 @@ type CreateTaskInput = {
 	agent?: DelegateAgent;
 	model?: string;
 	effort?: string;
+	serviceTier?: "default" | "priority";
 	mode?: "tui";
 	approvalMode?: "bypass-permissions";
 	attachments?: FileAttachmentPayload[];
@@ -106,6 +108,7 @@ export function TaskComposer({
 	const [agentTouched, setAgentTouched] = useState(false);
 	const [modelTouched, setModelTouched] = useState(false);
 	const [effortTouched, setEffortTouched] = useState(false);
+	const [serviceTier, setServiceTier] = useState<string | undefined>();
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState<string | undefined>();
 	const [fallbackAction, setFallbackAction] = useState<FallbackAction>();
@@ -171,6 +174,7 @@ export function TaskComposer({
 					agent: input.agent,
 					...(input.model ? { model: input.model } : {}),
 					...(input.effort !== undefined ? { effort: input.effort } : {}),
+					...(input.serviceTier !== undefined ? { serviceTier: input.serviceTier } : {}),
 						...(input.mode ? { mode: input.mode } : {}),
 						...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
 						...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
@@ -218,6 +222,7 @@ export function TaskComposer({
 					prompt: input.brief,
 					displayName,
 					model: input.model,
+					serviceTier: input.serviceTier,
 					...(input.mode ? { mode: input.mode } : {}),
 					...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
 				},
@@ -331,6 +336,11 @@ export function TaskComposer({
 	const defaultModeForSelectedAgent = projectModeForSelectedAgent || (catalogUsesModes ? catalogDefaultOption : "");
 	const selectedModel = model || defaultModelForSelectedAgent;
 	const selectedMode = mode || defaultModeForSelectedAgent;
+ const parameterModel = findParameterModel(catalogModels, selectedModel);
+ const defaultServiceTier = selectedAgent === defaultWorkerAgent
+  ? projectQuery.data?.config?.worker?.agentConfig?.serviceTier ?? projectQuery.data?.config?.agentConfig?.serviceTier
+  : undefined;
+ const selectedServiceTier = resolveServiceTier(parameterModel, serviceTier ?? defaultServiceTier);
 
 	const selectedAgentLabel = agentCatalog?.agents.find((item) => item.id === selectedAgent)?.label || selectedAgent;
 	const requiresTuiFallback =
@@ -354,7 +364,7 @@ export function TaskComposer({
 		if (!effortTouched) setEffort(selectedAgent === defaultWorkerAgent ? defaultWorkerEffort : "");
 	}, [defaultWorkerAgent, defaultWorkerEffort, effortTouched, selectedAgent]);
 
-	const isDirty = isPromptDirty || modelTouched || effortTouched || attachments.length > 0;
+	const isDirty = isPromptDirty || modelTouched || effortTouched || serviceTier !== undefined || attachments.length > 0;
 	const handlePromptChange = useCallback((value: string) => {
 		const nextDirty = value.trim() !== "";
 		setIsPromptDirty((wasDirty) => (wasDirty === nextDirty ? wasDirty : nextDirty));
@@ -397,6 +407,7 @@ export function TaskComposer({
 				model: requestedModel,
 				// Only explicit Codex picks set this; agent changes reset it, and TUI retries preserve it.
 				effort: effortTouched ? effort : undefined,
+				serviceTier: selectedAgent === "codex" ? selectedServiceTier : undefined,
 				mode: interfaceMode,
 				approvalMode,
 				attachments: attachmentPayloads.length > 0 ? attachmentPayloads : undefined,
@@ -454,6 +465,7 @@ export function TaskComposer({
 					setModelTouched(false);
 					setEffort("");
 					setEffortTouched(false);
+					setServiceTier(undefined);
 				},
 			}}
 			model={{
@@ -499,6 +511,7 @@ export function TaskComposer({
 			}}
 			renderAgentControl={(control) => <DesktopAgentControl {...control} />}
 			renderModelControl={(control) => (
+				<>
 				<TaskModelPicker {...control} onRefresh={refreshSelectedModels}
 					tuning={selectedAgent === "codex" && !requiresTuiFallback ? {
 						effort,
@@ -506,6 +519,8 @@ export function TaskComposer({
 						onEffortReset: setEffort,
 					} : undefined}
 				/>
+				{selectedAgent === "codex" && !isCloudProject && <ServiceTierControl model={parameterModel} value={selectedServiceTier} onChange={setServiceTier} disabled={isSubmitting} />}
+				</>
 			)}
 		/>
 	);

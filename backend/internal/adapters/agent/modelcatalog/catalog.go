@@ -290,6 +290,7 @@ func discoverCodexCatalog(ctx context.Context, request ports.AgentModelDiscovery
 		normalized = append(normalized, ports.AgentModelInfo{
 			ID: id, Label: label, Provider: provider, IsDefault: item.Default,
 			Efforts: append([]string(nil), item.Efforts...), DefaultEffort: item.DefaultEffort,
+			ServiceTiers: item.ServiceTiers, DefaultServiceTier: item.DefaultServiceTier,
 		})
 	}
 	if len(normalized) == 0 {
@@ -490,6 +491,9 @@ func BinaryVersion(ctx context.Context, binary string) string {
 func CatalogFingerprint(ctx context.Context, agentID, binary, workingDir string, env map[string]string) string {
 	binaryVersion := BinaryVersion(ctx, binary)
 	config := discoveryConfigInputs(agentID, workingDir, env)
+	if agentID == "codex" {
+		config += "\x00model-parameters-v1"
+	}
 	if config == "" {
 		// Keep the executable-only fingerprint byte-identical to what earlier
 		// daemons wrote, so upgrading does not invalidate every cached catalog.

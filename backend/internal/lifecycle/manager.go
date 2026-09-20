@@ -59,6 +59,7 @@ type controllerEpochStore interface {
 		domain.SessionMode,
 		string,
 		time.Time,
+		...domain.AgentConfig,
 	) (bool, error)
 	RestoreSessionControllerEpoch(
 		context.Context,
@@ -1574,9 +1575,10 @@ func (m *Manager) CommitControllerEpoch(
 	source, target domain.SessionMode,
 	nativeConversationID string,
 	startFresh bool,
+	modelParameters ...domain.AgentConfig,
 ) (bool, error) {
 	return m.changeControllerEpoch(
-		ctx, id, source, target, nativeConversationID, startFresh, false,
+		ctx, id, source, target, nativeConversationID, startFresh, false, modelParameters...,
 	)
 }
 
@@ -1601,7 +1603,11 @@ func (m *Manager) changeControllerEpoch(
 	source, target domain.SessionMode,
 	nativeConversationID string,
 	startFresh, restore bool,
+	modelParameters ...domain.AgentConfig,
 ) (bool, error) {
+	if len(modelParameters) > 1 {
+		return false, fmt.Errorf("lifecycle: multiple model parameter snapshots")
+	}
 	if !source.Valid() || !target.Valid() || source == target {
 		return false, fmt.Errorf("lifecycle: invalid controller epoch %q -> %q", source, target)
 	}
@@ -1639,7 +1645,7 @@ func (m *Manager) changeControllerEpoch(
 		)
 	} else {
 		changed, err = writer.CommitSessionControllerEpoch(
-			ctx, id, source, target, nativeConversationID, now,
+			ctx, id, source, target, nativeConversationID, now, modelParameters...,
 		)
 	}
 	if err != nil || !changed {
@@ -1652,6 +1658,11 @@ func (m *Manager) changeControllerEpoch(
 	// controller is actually live.
 	next := previous
 	next.Mode = target
+	if len(modelParameters) == 1 {
+		next.Metadata.Model = modelParameters[0].Model
+		next.Metadata.ReasoningEffort = modelParameters[0].Effort
+		next.Metadata.ServiceTier = modelParameters[0].ServiceTier
+	}
 	next.Metadata.RuntimeHandleID = ""
 	next.Metadata.RuntimeLaunchID = ""
 	next.Metadata.AgentSessionID = nativeConversationID
@@ -1914,6 +1925,8 @@ func mergeMetadata(base, in domain.SessionMetadata) domain.SessionMetadata {
 	set(&base.LatestAssistantUpdate, in.LatestAssistantUpdate)
 	set(&base.NativeTranscriptPath, in.NativeTranscriptPath)
 	set(&base.Model, in.Model)
+	set(&base.ReasoningEffort, in.ReasoningEffort)
+	set(&base.ServiceTier, in.ServiceTier)
 	set(&base.BrowserCapabilityVerifier, in.BrowserCapabilityVerifier)
 	// The chat controller's resume handle. Without this a restart has no thread to
 	// resume and the conversation is stranded — the provider still holds it, but

@@ -606,9 +606,8 @@ func TestCatalogFingerprintTracksTheConfiguredClaudeCodeModel(t *testing.T) {
 func TestCatalogFingerprintKeepsTheExecutableOnlyValueForConfiglessAgents(t *testing.T) {
 	dir := t.TempDir()
 	writeClaudeSettings(t, dir, "opus")
-	// codex reads no configuration, so its fingerprint must stay byte-identical
-	// to the executable fingerprint earlier daemons cached under.
-	got := CatalogFingerprint(context.Background(), "codex", "codex", dir, nil)
+	// Configless agents without versioned capability discovery keep their cache.
+	got := CatalogFingerprint(context.Background(), "amp", "codex", dir, nil)
 	if want := BinaryVersion(context.Background(), "codex"); got != want {
 		t.Fatalf("fingerprint = %q, want the executable fingerprint %q", got, want)
 	}
@@ -625,5 +624,22 @@ func TestCatalogFingerprintDistinguishesConfiguredFromUnconfigured(t *testing.T)
 	if CatalogFingerprint(context.Background(), "claude-code", "", unset, nil) ==
 		CatalogFingerprint(context.Background(), "claude-code", "", configured, nil) {
 		t.Fatal("configuring a model must change the fingerprint")
+	}
+}
+
+func TestFleetCodexCatalogRetainsModelCapabilities(t *testing.T) {
+	model := ports.ChatModel{ID: "gpt-test", DisplayName: "Test", Default: true, Efforts: []string{"low", "ultra"}, DefaultEffort: "low", ServiceTiers: []ports.ModelServiceTier{{ID: "priority", Name: "Fast"}}, DefaultServiceTier: "default"}
+	catalog, err := (Discoverer{CodexModels: func(context.Context, ports.AgentModelDiscoveryRequest) ([]ports.ChatModel, error) {
+		return []ports.ChatModel{model}, nil
+	}}).Discover(context.Background(), ports.AgentModelDiscoveryRequest{AgentID: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := catalog.Models[0]
+	if !reflect.DeepEqual(got.Efforts, model.Efforts) || !reflect.DeepEqual(got.ServiceTiers, model.ServiceTiers) || got.DefaultEffort != "low" || got.DefaultServiceTier != "default" {
+		t.Fatalf("lost capabilities: %+v", got)
+	}
+	if CatalogFingerprint(context.Background(), "codex", "", t.TempDir(), nil) == BinaryVersion(context.Background(), "") {
+		t.Fatal("old model-only cache was not invalidated")
 	}
 }

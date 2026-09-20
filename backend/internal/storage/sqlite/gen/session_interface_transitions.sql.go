@@ -432,3 +432,49 @@ func (q *Queries) MarkSessionInterfaceTransitionMessageDelivered(ctx context.Con
 	}
 	return result.RowsAffected()
 }
+
+const setInterfaceConversationModelParameters = `-- name: SetInterfaceConversationModelParameters :exec
+UPDATE conversations SET model = ?, reasoning_effort = ?, service_tier = ?, updated_at = ? WHERE session_id = ?
+`
+
+type SetInterfaceConversationModelParametersParams struct {
+	Model           sql.NullString
+	ReasoningEffort sql.NullString
+	ServiceTier     sql.NullString
+	UpdatedAt       time.Time
+	SessionID       *domain.SessionID
+}
+
+func (q *Queries) SetInterfaceConversationModelParameters(ctx context.Context, arg SetInterfaceConversationModelParametersParams) error {
+	_, err := q.db.ExecContext(ctx, setInterfaceConversationModelParameters,
+		arg.Model,
+		arg.ReasoningEffort,
+		arg.ServiceTier,
+		arg.UpdatedAt,
+		arg.SessionID,
+	)
+	return err
+}
+
+const setInterfaceSessionModelParameters = `-- name: SetInterfaceSessionModelParameters :exec
+UPDATE sessions SET model = ?, reasoning_effort = ?, service_tier = ? WHERE id = ?
+`
+
+type SetInterfaceSessionModelParametersParams struct {
+	Model           string
+	ReasoningEffort string
+	ServiceTier     string
+	ID              domain.SessionID
+}
+
+// Model parameters move with the controller epoch in the same transaction.
+// Empty strings/NULL clear stale AO overrides instead of inheriting them.
+func (q *Queries) SetInterfaceSessionModelParameters(ctx context.Context, arg SetInterfaceSessionModelParametersParams) error {
+	_, err := q.db.ExecContext(ctx, setInterfaceSessionModelParameters,
+		arg.Model,
+		arg.ReasoningEffort,
+		arg.ServiceTier,
+		arg.ID,
+	)
+	return err
+}
