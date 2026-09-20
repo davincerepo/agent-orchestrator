@@ -39,6 +39,7 @@ type spawnOptions struct {
 // spawnRequest mirrors the daemon's SpawnSessionRequest body for
 // POST /api/v1/sessions. The CLI keeps its own copy so it need not import httpd.
 type spawnRequest struct {
+	CallerSessionID string `json:"callerSessionId,omitempty"`
 	ProjectID       string `json:"projectId,omitempty"`
 	IssueID         string `json:"issueId,omitempty"`
 	ParentSessionID string `json:"parentSessionId,omitempty"`
@@ -116,14 +117,21 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 			}
 			opts.trackerProvider = tp
 
+			caller, ownProject, err := ctx.callerProject(cmd.Context())
+			if err != nil {
+				return err
+			}
 			var project projectDetails
-			var err error
 			if !opts.standalone {
-				project, err = ctx.resolveSpawnProject(cmd.Context(), opts.project)
+				project, err = ctx.resolveSpawnProject(cmd.Context(), opts.project, caller, ownProject)
 				if err != nil {
 					return err
 				}
 				opts.project = project.ID
+			}
+
+			if err := checkCallerProject(caller, ownProject, project.ID); err != nil {
+				return err
 			}
 
 			harness, err := resolveSpawnHarness(opts.harness, opts.kind, project)
@@ -154,6 +162,7 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 				}
 			}
 			req := spawnRequest{
+				CallerSessionID: caller,
 				ProjectID:       opts.project,
 				IssueID:         opts.issue,
 				ParentSessionID: strings.TrimSpace(os.Getenv("AO_SESSION_ID")),
@@ -244,19 +253,20 @@ func (c *commandContext) fetchAgentInventory(ctx context.Context, refresh bool) 
 	return readinessInventory(readiness), nil
 }
 
-func (c *commandContext) resolveSpawnProject(ctx context.Context, explicit string) (projectDetails, error) {
+func (c *commandContext) resolveSpawnProject(ctx context.Context, explicit, caller, ownProject string) (projectDetails, error) {
+	if caller != "" {
+		if explicit != "" {
+			if err := checkCallerProject(caller, ownProject, strings.TrimSpace(explicit)); err != nil {
+				return projectDetails{}, err
+			}
+		}
+		return c.fetchProjectDetails(ctx, ownProject)
+	}
 	if id := strings.TrimSpace(explicit); id != "" {
 		return c.fetchProjectDetails(ctx, id)
 	}
 	if id := strings.TrimSpace(os.Getenv("AO_PROJECT_ID")); id != "" {
 		return c.fetchProjectDetails(ctx, id)
-	}
-	if sessionID := strings.TrimSpace(os.Getenv("AO_SESSION_ID")); sessionID != "" {
-		project, err := c.resolveProjectFromSession(ctx, sessionID)
-		if err != nil {
-			return projectDetails{}, err
-		}
-		return project, nil
 	}
 	project, ok, err := c.resolveProjectFromCWD(ctx)
 	if err != nil {
@@ -266,17 +276,6 @@ func (c *commandContext) resolveSpawnProject(ctx context.Context, explicit strin
 		return project, nil
 	}
 	return projectDetails{}, usageError{fmt.Errorf("project could not be resolved; pass --project, use --standalone, or run `ao project add --path <repo-path> --worker-agent <agent>`")}
-}
-
-func (c *commandContext) resolveProjectFromSession(ctx context.Context, sessionID string) (projectDetails, error) {
-	sess, err := c.fetchScopedSession(ctx, sessionID, "")
-	if err != nil {
-		return projectDetails{}, usageError{fmt.Errorf("project could not be resolved from AO_SESSION_ID %q; pass --project", sessionID)}
-	}
-	if strings.TrimSpace(sess.ProjectID) == "" {
-		return projectDetails{}, usageError{fmt.Errorf("project could not be resolved from AO_SESSION_ID %q; pass --project", sessionID)}
-	}
-	return c.fetchProjectDetails(ctx, sess.ProjectID)
 }
 
 func (c *commandContext) resolveProjectFromCWD(ctx context.Context) (projectDetails, bool, error) {

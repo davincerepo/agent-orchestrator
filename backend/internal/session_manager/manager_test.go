@@ -1415,6 +1415,9 @@ func TestSpawn_ResolvesProjectConfig(t *testing.T) {
 	if rt.lastCfg.Env[EnvSessionID] == "" {
 		t.Fatal("runtime env missing AO_SESSION_ID")
 	}
+	if rt.lastCfg.Env[EnvSessionID] != string(rec.ID) || rt.lastCfg.Env[EnvProjectID] != string(rec.ProjectID) {
+		t.Fatal("terminal command context does not match its AO session")
+	}
 
 	agent.lastConfig = ports.AgentConfig{}
 	if _, _, _, err := m.Spawn(ctx, ports.SpawnConfig{

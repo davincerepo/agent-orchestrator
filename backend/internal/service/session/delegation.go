@@ -47,6 +47,9 @@ type DelegateTaskOutcome struct {
 // refines that title in the background through the project orchestrator,
 // resuming or creating the coordinator when necessary.
 func (s *Service) DelegateTask(ctx context.Context, in DelegateTaskInput) (DelegateTaskOutcome, error) {
+	if err := s.checkDispatchProject(ctx, in.ProjectID); err != nil {
+		return DelegateTaskOutcome{}, err
+	}
 	if _, err := s.requireProject(ctx, in.ProjectID); err != nil {
 		return DelegateTaskOutcome{}, err
 	}

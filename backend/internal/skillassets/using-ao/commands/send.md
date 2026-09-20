@@ -2,6 +2,8 @@
 
 Send a message to a running agent session. Use this to correct or direct a live agent mid-stream without killing and respawning it.
 
+Messages are limited to 1 MiB of UTF-8 text (including the sender prefix); for larger content, write it to a file accessible to the recipient and send the file path.
+
 ## Syntax
 
 ```

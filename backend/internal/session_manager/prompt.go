@@ -198,6 +198,7 @@ Your job is to coordinate work, not to perform implementation. Keep the project 
 - If the human asks for implementation, fixes, tests, PR updates, or merge-conflict resolution, inspect current state and spawn or redirect a worker session instead of doing the work yourself.
 - If the human explicitly insists that the orchestrator itself make code changes, ask for explicit confirmation before making any code changes, and prefer spawning or redirecting a worker unless the human explicitly confirms direct orchestrator edits are required.
 - Delegate implementation, fixes, tests, and PR ownership to worker sessions.
+- Assign work only to workers in this AO project. Session queries default to your session's project; cross-project sends and spawns are rejected. Do not change or unset AO_SESSION_ID to bypass this scope.
 - Before spawning new work, inspect current state so you do not duplicate active sessions.
 - For complex planning, research, or large coordination tasks, write a short plan first.
 - Do not use the agent runtime's built-in subagent or task-delegation tools for implementation work.
@@ -208,7 +209,7 @@ Your job is to coordinate work, not to perform implementation. Keep the project 
 
 ## Core Commands
 
-- `+"`ao status`"+` - inspect project, session, PR, and review state.
+- `+"`ao status`"+` - inspect AO daemon health.
 - `+"`ao session ls --project %s`"+` - list sessions for this project.
 - `+"`ao session get <worker-session-id>`"+` - inspect a worker session's details.
 - `+"`ao spawn --project %s --name \"<label>\" --prompt \"<clear worker task>\"`"+` - spawn a freeform worker.
@@ -224,7 +225,7 @@ Your job is to coordinate work, not to perform implementation. Keep the project 
 
 ## Coordination Workflow
 
-1. Inspect current state with `+"`ao status`"+`.
+1. Inspect this project's workers with `+"`ao session ls`"+`. An explicit `+"`--project`"+` or `+"`--all-projects`"+` broadens reads only, not dispatch permissions.
 2. Identify which worker owns each task or PR.
 3. Spawn a worker only when no suitable active worker exists.
 4. Send workers clear task instructions with the expected outcome.

@@ -23,6 +23,7 @@ type sessionOptions struct {
 
 type sessionListOptions struct {
 	sessionOptions
+	allProjects       bool
 	all               bool
 	includeTerminated bool
 }
@@ -217,7 +218,9 @@ func newSessionListCommand(ctx *commandContext) *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	addSessionProjectFlag(f, &opts.project, "Filter by project ID")
+	addSessionProjectFlag(f, &opts.project, "Filter by project ID (default: current AO session's project)")
+	f.BoolVar(&opts.allProjects, "all-projects", false, "Explicitly list across all projects")
+	cmd.MarkFlagsMutuallyExclusive("project", "all-projects")
 	f.BoolVarP(&opts.all, "all", "a", false, "Include orchestrator sessions")
 	f.BoolVar(&opts.includeTerminated, "include-terminated", false, "Include terminated sessions")
 	f.BoolVar(&opts.json, "json", false, "Output as JSON")
@@ -488,6 +491,11 @@ func writeClaimPRResult(cmd *cobra.Command, res claimPRResponse) error {
 }
 
 func (c *commandContext) listSessions(ctx context.Context, cmd *cobra.Command, opts sessionListOptions) error {
+	project, err := c.sessionListProject(ctx, opts.project, opts.allProjects)
+	if err != nil {
+		return err
+	}
+	opts.project = project
 	params := url.Values{}
 	if opts.project != "" {
 		params.Set("project", opts.project)
