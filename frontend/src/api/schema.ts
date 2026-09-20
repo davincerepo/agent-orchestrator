@@ -3904,6 +3904,7 @@ export interface components {
             attachment?: components["schemas"]["AttachmentInput"];
             /** @description Calling AO agent session. When supplied, dispatch is limited to its project. Omitted for human requests; message text is never used as caller identity. */
             callerSessionId?: string;
+            /** @description Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix. */
             message: string;
         };
         SendSessionMessageResponse: {
@@ -4290,6 +4291,7 @@ export interface components {
             callerSessionId?: string;
             clientMessageId?: string;
             recoverOnly?: boolean;
+            /** @description Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix. */
             text: string;
         };
         SteerConversationResponse: {

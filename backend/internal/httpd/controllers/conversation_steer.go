@@ -43,6 +43,9 @@ func (c *ConversationsController) steerOrSend(w http.ResponseWriter, r *http.Req
 		return
 	}
 	r = r.WithContext(dispatchscope.WithCallerSession(r.Context(), req.CallerSessionID))
+	if !req.RecoverOnly && !validateMessageLength(w, r, req.Text) {
+		return
+	}
 	content, attachmentErr := conversationContent(SendConversationMessageRequest{
 		Attachments: req.Attachments,
 	})
@@ -99,6 +102,9 @@ func (c *ConversationsController) steer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	r = r.WithContext(dispatchscope.WithCallerSession(r.Context(), req.CallerSessionID))
+	if !req.RecoverOnly && !validateMessageLength(w, r, req.Text) {
+		return
+	}
 	if req.RecoverOnly {
 		result, err := c.Svc.RecoverSteer(r.Context(), domain.SessionID(chi.URLParam(r, "sessionId")), req.ClientMessageID)
 		if err != nil {

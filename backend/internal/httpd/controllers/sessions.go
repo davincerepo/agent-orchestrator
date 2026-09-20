@@ -37,7 +37,7 @@ import (
 
 const (
 	maxPromptLen      = 16 << 10
-	maxMessageLen     = 4096
+	maxMessageLen     = 1 << 20
 	maxModelLen       = 256
 	maxDisplayNameLen = 20
 	maxIdempotencyKey = 128
@@ -1480,8 +1480,7 @@ func (c *SessionsController) send(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "MESSAGE_REQUIRED", "Message is required", nil)
 		return
 	}
-	if len(in.Message) > maxMessageLen {
-		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "MESSAGE_TOO_LONG", "Message is too long", nil)
+	if !validateMessageLength(w, r, in.Message) {
 		return
 	}
 	var attachment *ports.SpawnAttachment

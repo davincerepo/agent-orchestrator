@@ -11016,7 +11016,8 @@ components:
           maxLength: 128
           type: string
         message:
-          maxLength: 4096
+          description: Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix.
+          maxLength: 1.048576e+06
           minLength: 1
           type: string
       required:
@@ -12020,6 +12021,8 @@ components:
         recoverOnly:
           type: boolean
         text:
+          description: Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix.
+          maxLength: 1.048576e+06
           type: string
       required:
       - text

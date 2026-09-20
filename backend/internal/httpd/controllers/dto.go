@@ -849,7 +849,7 @@ type CleanupSessionsResponse struct {
 // SendSessionMessageRequest is the body of POST /api/v1/sessions/{sessionId}/send.
 type SendSessionMessageRequest struct {
 	CallerSessionID domain.SessionID `json:"callerSessionId,omitempty" maxLength:"128" description:"Calling AO agent session. When supplied, dispatch is limited to its project. Omitted for human requests; message text is never used as caller identity."`
-	Message         string           `json:"message" minLength:"1" maxLength:"4096"`
+	Message         string           `json:"message" minLength:"1" maxLength:"1048576" description:"Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix."`
 	// Attachment is an optional inline image (e.g. a browser-annotation
 	// snapshot) delivered alongside the message. The daemon writes it into the
 	// session worktree and appends a path reference to the message.
@@ -1916,7 +1916,7 @@ type SendConversationMessageResponse struct {
 type SteerConversationRequest struct {
 	CallerSessionID domain.SessionID `json:"callerSessionId,omitempty" maxLength:"128" description:"Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication."`
 	// Text is the correction to hand the agent mid-turn.
-	Text string `json:"text"`
+	Text string `json:"text" maxLength:"1048576" description:"Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix."`
 	// Attachments are native image prompt blocks delivered with the correction.
 	Attachments []ConversationImageContentRequest `json:"attachments,omitempty"`
 	// ClientMessageID makes a retry idempotent at AO's durable daemon boundary. The
