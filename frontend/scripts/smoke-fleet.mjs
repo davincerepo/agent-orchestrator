@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -32,6 +32,8 @@ const env = {
 	AO_FLEET_PORT: "13011", ELECTRON_ENABLE_LOGGING: "1",
 };
 delete env.AO_FLEET_HOME;
+delete env.AO_SESSION_ID;
+delete env.AO_PROJECT_ID;
 delete env.ELECTRON_RUN_AS_NODE;
 for (const directory of [env.CODEX_HOME, env.APPDATA, env.LOCALAPPDATA, ...["Downloads", "Desktop", "Documents", "Pictures", "Music", "Videos"].map((name) => join(home, name))]) mkdirSync(directory, { recursive: true });
 if (await health(13011)) throw new Error("Smoke port 13011 is already occupied; close the previous test instance first");
@@ -66,6 +68,9 @@ try {
 	assert.equal(runFile.pid, fleetHealth?.pid);
 	assert.equal(resolve(fleetHealth.executablePath), join(dirname(executablePath), "resources/daemon/ao.exe"));
 	verifiedDaemonPid = fleetHealth.pid;
+	const cli = spawnSync(join(dirname(executablePath), "resources/daemon/ao.exe"), ["session", "ls"], { env, encoding: "utf8", windowsHide: true, timeout: 30_000 });
+	assert.equal(cli.status, 0, `Fleet CLI did not find its daemon under .ao-fleet: ${cli.stderr}`);
+	assert.equal(existsSync(join(home, ".ao/fleet")), false, "Fleet recreated the legacy state root");
 	const updates = await page.evaluate(async () => {
 		await window.ao.updateSettings.set({ enabled: true, channel: "latest", nightlyAck: false, feature: null });
 		await window.ao.updates.check();
