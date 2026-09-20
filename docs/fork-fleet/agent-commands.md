@@ -2,6 +2,12 @@
 
 分支：`fleet/feat/agent-commands`。消息 steering 使用官方 `ao send --steer`，包括空闲时新建轮次、投递 ID 与结果恢复。
 
+## Worker 分派与释放
+
+默认新建 worker，减少无关上下文；仅继续修改某个 worker 刚完成的工作时复用，不因空闲或熟悉项目而复用。CI/review 后续遵循同一规则，派单前仍检查是否已有 worker 正在处理，避免重复执行。
+
+完成后将代码和必要说明提交，并记录验证结果与交付位置；其他产物保存到会话工作区以外的持久位置，遵守用户对提交和发布的限制。Worker 向协调器报告完成，协调器及时执行 `ao session kill` 释放，不为保留聊天上下文或等待未来任务而闲置。这是内置提示词策略，不是 daemon 自动回收机制。
+
 ## 项目范围
 
 AO 会话内以 `AO_SESSION_ID` 对应的数据库项目归属为准，覆盖冲突的 `AO_PROJECT_ID`，Chat/TUI 一致。
