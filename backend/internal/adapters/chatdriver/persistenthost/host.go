@@ -566,7 +566,7 @@ func readDescriptorContext(ctx context.Context, dataDir, sessionID string) (Desc
 	for {
 		select {
 		case <-ctx.Done():
-			return Descriptor{}, ctx.Err()
+			return Descriptor{}, errors.Join(err, ctx.Err())
 		case <-timeout.C:
 			return Descriptor{}, err
 		case <-ticker.C:
@@ -672,6 +672,10 @@ func Run(ctx context.Context, cfg Config) error {
 	child := aoprocess.Command(cfg.Argv[0], cfg.Argv[1:]...) //nolint:gosec // provider argv is constructed by AO's driver.
 	child.Dir = cfg.Workdir
 	child.Env = cfg.Env
+	// A descendant can inherit an output handle and outlive the provider,
+	// leaving an exec copy goroutine blocked after the provider exits. Bound that
+	// wait so the host still releases its descriptor and launch lock.
+	child.WaitDelay = time.Second
 	configureProviderProcess(child)
 	stdin, err := child.StdinPipe()
 	if err != nil {

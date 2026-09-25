@@ -48,7 +48,7 @@ func ShutdownAll(ctx context.Context, dataDir string) error {
 }
 
 func shutdownAndWait(ctx context.Context, dataDir, id string) error {
-	d, err := readDescriptor(dataDir, id)
+	d, err := readShutdownDescriptor(ctx, dataDir, id)
 	if errors.Is(err, os.ErrNotExist) {
 		// A directory also stores historical journals after a successful stop.
 		// A lock without a descriptor, however, could be an incomplete launch.

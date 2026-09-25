@@ -153,6 +153,8 @@ Cloud 登录复用现有的 `http://127.0.0.1:3000/callback` 回环 OAuth 路径
 
 顶部 `Fleet → 完全退出…` 经确认后，先通过 loopback API 停止当前实例的 daemon 并等待进程退出，再由随包 daemon 的 `--stop-background` 模式停止该数据目录登记的 chat-host、provider 和终端，最后退出桌面。保留会话历史和工作目录；普通关闭窗口仍保留后台会话。失败时保留窗口并允许重试，不按进程名称批量结束进程。
 
+Windows 退出时短暂的宿主记录占用会限时重试，provider 退出后继承的输出管道不会无限阻塞宿主清理；无法确认归属或超时仍保留窗口供重试。
+
 后台清理由 `backend/internal/daemon/fleet_windows.go` 负责，与正常 Fleet daemon 共用 OS 文件锁，防止清理期间重新启动。桌面接入在 `frontend/src/main/fleet-quit.ts` 和 `FleetQuitDialog.tsx`；普通 AO 构建不提供此入口。
 
 原有品牌展示组件及 8 个语言文件的改动已撤回。Forge 直接沿用上游 hooks，不再重复写更新元数据；构建脚本仍将 `AO_RELEASE_REPO` 指向 fork。保留所有数据、进程和更新隔离检查以及对应的测试。
