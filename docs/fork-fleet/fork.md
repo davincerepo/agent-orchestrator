@@ -11,6 +11,7 @@
 | `fleet/feat/agent-commands` | 项目查询与派单范围、1 MiB 消息；steer 使用官方实现 | [agent-commands.md](agent-commands.md) |
 | `fleet/feat/model-parameters` | 官方 Effort、Codex Fast、参数恢复与反显 | [model-parameters.md](model-parameters.md) |
 | `fleet/feat/portable` | 免安装、数据与进程隔离、AO Fleet 品牌 | [fleet-portable.md](fleet-portable.md) |
+| `codex/fix-chat-history-edit` | 临时修复连续编辑历史消息导致控制器停止 | [chat-history-edit.md](chat-history-edit.md) |
 
 `fleet/feat/session-import` 仅保留历史参考，不参与集成。
 
@@ -18,4 +19,5 @@
 
 - 实现先提交到所属功能分支，再合入 `main-fleet`；功能分支保持独立，不反向合入集成分支。
 - 官方更新先合入 `common`，各功能分支适配后再集成；跨功能冲突较多时应调整分支结构并反馈。
+- 临时上游缺陷修复从 `common` 独立分支，仅集成到 `main-fleet`，不合入 `common` 或其他功能分支；上游提供等价修复并通过回归后撤下该补丁，保留官方实现。
 - 临时 worktree 使用完释放。每个功能分支只维护一份简短说明，记录行为、边界和升级注意事项，不列文件清单或复述提交历史。
