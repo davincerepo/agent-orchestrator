@@ -486,7 +486,7 @@ func bindConnToContext(ctx context.Context, conn net.Conn) func(error) error {
 // Missing/dead hosts are harmless; unknown live owners fail closed.
 // The protocol acknowledgement only confirms that shutdown was requested.
 func Shutdown(ctx context.Context, dataDir, sessionID string) error {
-	d, err := readDescriptor(dataDir, sessionID)
+	d, err := readShutdownDescriptor(ctx, dataDir, sessionID)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -520,7 +520,7 @@ func Shutdown(ctx context.Context, dataDir, sessionID string) error {
 	if !response.OK {
 		return errors.New(response.Error)
 	}
-	waitCtx, stop := context.WithTimeout(ctx, 5*time.Second)
+	waitCtx, stop := context.WithTimeout(ctx, 10*time.Second)
 	defer stop()
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
@@ -536,7 +536,7 @@ func Shutdown(ctx context.Context, dataDir, sessionID string) error {
 			} else if lockErr != nil {
 				return lockErr
 			}
-		} else if readErr != nil {
+		} else if readErr != nil && !descriptorBusy(readErr) {
 			return readErr
 		}
 		select {
@@ -570,6 +570,10 @@ func Run(ctx context.Context, cfg Config) error {
 	child := exec.Command(cfg.Argv[0], cfg.Argv[1:]...) //nolint:gosec // provider argv is constructed by AO's driver.
 	child.Dir = cfg.Workdir
 	child.Env = cfg.Env
+	// A descendant can inherit stderr and outlive the provider, leaving exec's
+	// copy to io.Discard blocked after the provider has already exited. Bound
+	// that pipe wait so the host still releases its descriptor and launch lock.
+	child.WaitDelay = time.Second
 	configureProviderProcess(child)
 	stdin, err := child.StdinPipe()
 	if err != nil {
