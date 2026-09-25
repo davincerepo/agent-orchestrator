@@ -20,7 +20,7 @@ Desktop 和随包 CLI 固定使用 Fleet 配置，不接受普通 `AO_DATA_DIR`�
 
 安装目录必须为空或带 `.fleet-install.json` 管理标记；拒绝覆盖源码、数据、无关目录及链接，发现占用进程即报错，不强杀。程序目录不能放个人文件。可用不提交 Git 的 `scripts/install-fleet.local.json` 设置 `installDir`、`node`、`go` 绝对路径；显式命令行路径优先。系统 PATH 的 AO 冲突需自行处理。
 
-退出：普通关闭窗口保留后台任务；顶部 `Fleet → 完全退出…` 经确认后只停止当前实例的 daemon、provider 和终端，保留历史与工作目录。失败保留窗口供重试。更新前使用完全退出，再替换程序目录，保留数据根目录。
+退出：普通关闭窗口保留后台任务；顶部 `Fleet → 完全退出…` 经确认后只停止当前实例的 daemon、provider 和终端，保留历史与工作目录。Windows 退出时短暂的宿主记录占用会限时重试，provider 退出后继承的输出管道不会无限阻塞宿主清理；无法确认归属或超时仍保留窗口供重试。更新前使用完全退出，再替换程序目录，保留数据根目录。
 
 验证入口：`scripts/install-fleet.test.ps1` 使用临时目录/桌面/PATH；`npm --prefix frontend run test:fleet:packaged` 检查真实产物隔离和退出。打包重建 better-sqlite3 为 Electron ABI 后，Node 数据库单测前需在 frontend 执行 `npm rebuild better-sqlite3`。
 
