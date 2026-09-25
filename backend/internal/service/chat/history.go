@@ -1064,6 +1064,9 @@ func (s *Service) installStartedBranchController(
 		cfg.ExpectedControllerOwner.Mode = domain.SessionModeChat
 		cfg.ExpectedControllerOwner.IsTerminated = false
 		cfg.ExpectedControllerOwner.RuntimeLaunchID = ""
+		// Match the native identity committed by ActivateConversationBranchSession.
+		cfg.ExpectedControllerOwner.AgentSessionID = replacement.ProviderConversationID()
+		cfg.ExpectedControllerOwner.AgentSessionIDLaunchID = ""
 		cfg.ExpectedControllerOwner.ProviderConversationID = replacement.ProviderConversationID()
 		cfg.ExpectedControllerOwner.ControllerGeneration = replacement.Generation()
 		s.startConfigs[id] = cfg
