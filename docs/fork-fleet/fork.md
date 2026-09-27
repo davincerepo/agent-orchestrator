@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | `fleet/feat/agent-commands` | 项目查询与派单范围、1 MiB 消息；steer 使用官方实现 | [agent-commands.md](agent-commands.md) |
 | `fleet/feat/model-parameters` | 官方 Effort、Codex Fast、参数恢复与反显 | [model-parameters.md](model-parameters.md) |
+| `fleet/feat/prompt-refresh` | 会话提示词重载：复制 provider 会话替换 standing prompt（codex/claude-code Chat） | [prompt-refresh.md](prompt-refresh.md) |
 | `fleet/feat/portable` | 免安装、数据与进程隔离、AO Fleet 品牌 | [fleet-portable.md](fleet-portable.md) |
 | `codex/fix-chat-history-edit` | 临时修复连续编辑历史消息导致控制器停止 | [chat-history-edit.md](chat-history-edit.md) |
 

@@ -58,6 +58,9 @@ type conversation struct {
 	threadSettingsKnown       bool
 	threadSettingsRevision    uint64
 	settingsRefresh           *threadSettingsRefresh
+	// launch records what a replacement thread needs from the launch that
+	// created this conversation. See RefreshStandingPrompt.
+	launch threadLaunchContext
 
 	mu      sync.Mutex
 	pending map[string]*parkedRequest
@@ -129,11 +132,12 @@ func newConversation(proc *process, log *slog.Logger, providerScopeID string) *c
 // start records the opened thread and begins translating notifications. It is
 // called once, after the thread is open, so no event is emitted for a
 // conversation the caller does not yet have a handle to.
-func (c *conversation) start(threadID, model, effort string) {
+func (c *conversation) start(threadID, model, effort string, launch threadLaunchContext) {
 	c.threadID = threadID
 	c.threadModel = model
 	c.threadEffort = effort
 	c.threadSettingsKnown = model != ""
+	c.launch = launch
 	go c.pump()
 }
 

@@ -47,6 +47,7 @@ import (
 var (
 	_ ports.ChatRollbacker       = (*conversation)(nil)
 	_ ports.ChatForker           = (*conversation)(nil)
+	_ ports.ChatPromptRefresher  = (*conversation)(nil)
 	_ ports.ChatRenamer          = (*conversation)(nil)
 	_ ports.ChatHistoryReader    = (*conversation)(nil)
 	_ ports.ChatHistoryRefresher = (*conversation)(nil)

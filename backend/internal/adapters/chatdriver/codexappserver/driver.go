@@ -346,7 +346,11 @@ func (d *Driver) Start(ctx context.Context, cfg ports.ChatStartConfig) (ports.Ch
 	}
 
 	conv.threadServiceTier = resp.ServiceTier
-	conv.start(resp.Thread.ID, resp.Model, resp.ReasoningEffort)
+	conv.start(resp.Thread.ID, resp.Model, resp.ReasoningEffort, threadLaunchContext{
+		workdir:     cfg.WorkspacePath,
+		permissions: cfg.Permissions,
+		codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+	})
 	return conv, nil
 }
 
@@ -375,7 +379,11 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		// across the daemon detach without waiting for the active turn to settle.
 		// Stored AO overrides are intentions, not a snapshot of the live thread.
 		// Defer reading its effective defaults until the user opens this session.
-		conv.start(cfg.ProviderConversationID, "", "")
+		conv.start(cfg.ProviderConversationID, "", "", threadLaunchContext{
+			workdir:     cfg.WorkspacePath,
+			permissions: cfg.Permissions,
+			codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+		})
 		return conv, nil
 	}
 
@@ -421,7 +429,11 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 	}
 
 	conv.threadServiceTier = resp.ServiceTier
-	conv.start(cfg.ProviderConversationID, resp.Model, resp.ReasoningEffort)
+	conv.start(cfg.ProviderConversationID, resp.Model, resp.ReasoningEffort, threadLaunchContext{
+		workdir:     cfg.WorkspacePath,
+		permissions: cfg.Permissions,
+		codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+	})
 	return conv, nil
 }
 

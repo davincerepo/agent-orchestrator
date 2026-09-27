@@ -242,6 +242,7 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ControllersSetSessionReviewerRequest":                "SetSessionReviewerRequest",
 	"ControllersRenameSessionResponse":                    "RenameSessionResponse",
 	"ControllersRestoreSessionResponse":                   "RestoreSessionResponse",
+	"ControllersReloadSessionPromptResponse":              "ReloadSessionPromptResponse",
 	"ControllersExitAgentResponse":                        "ExitAgentResponse",
 	"ControllersResumeAgentResponse":                      "ResumeAgentResponse",
 	"ControllersSwitchAgentRequest":                       "SwitchAgentRequest",
@@ -2277,6 +2278,18 @@ func sessionOperations() []operation {
 				{http.StatusNotFound, envelope.APIError{}},
 				{http.StatusConflict, envelope.APIError{}},
 				{http.StatusInternalServerError, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/sessions/{sessionId}/prompt/reload", id: "reloadSessionPrompt", tag: "sessions",
+			summary:    "Replace the session's standing prompt on a copy of its provider conversation",
+			pathParams: []any{controllers.SessionIDParam{}},
+			resps: []respUnit{
+				{http.StatusOK, controllers.ReloadSessionPromptResponse{}},
+				{http.StatusNotFound, envelope.APIError{}},
+				{http.StatusConflict, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
 			},
 		},
 		{

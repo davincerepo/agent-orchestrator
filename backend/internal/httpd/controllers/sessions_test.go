@@ -351,6 +351,19 @@ func (f *fakeSessionService) Restore(_ context.Context, id domain.SessionID) (se
 	return sessionsvc.RestoreOutcome{Session: s, Mode: sessionsvc.RestoreModeView("native")}, nil
 }
 
+func (f *fakeSessionService) ReloadSessionPrompt(_ context.Context, id domain.SessionID) (ports.ChatPromptReloadResult, error) {
+	s, ok := f.sessions[id]
+	if !ok {
+		// The production service maps manager sentinels to API errors before the
+		// envelope sees them; the fake answers in that shape directly.
+		return ports.ChatPromptReloadResult{}, apierr.NotFound("SESSION_NOT_FOUND", "Unknown session")
+	}
+	if s.IsTerminated {
+		return ports.ChatPromptReloadResult{}, apierr.Conflict("SESSION_TERMINATED", "Session is terminated", nil)
+	}
+	return ports.ChatPromptReloadResult{ProviderConversationID: "replaced-conv", BranchID: "branch-1"}, nil
+}
+
 func (f *fakeSessionService) ExitAgent(_ context.Context, id domain.SessionID) (sessionsvc.ExitAgentOutcome, error) {
 	s := f.sessions[id]
 	s.Activity.State = domain.ActivityExited
@@ -3373,5 +3386,46 @@ func TestSessionsAPI_ClaimPRErrors(t *testing.T) {
 				t.Fatalf("invalid ref missing workspace guidance: %s", body)
 			}
 		})
+	}
+}
+
+func TestSessionsAPI_ReloadPrompt(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := newFakeSessionService()
+	now := time.Now().UTC()
+	terminated := domain.Session{SessionRecord: domain.SessionRecord{
+		ID: "ao-9", ProjectID: "ao", Kind: domain.KindWorker, IsTerminated: true,
+		Activity:  domain.Activity{State: domain.ActivityExited, LastActivityAt: now},
+		CreatedAt: now, UpdatedAt: now,
+	}, Status: domain.StatusTerminated}
+	svc.sessions[terminated.ID] = terminated
+	deps := httpd.APIDeps{Sessions: svc}
+	srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{}, log, nil, deps, httpd.ControlDeps{}))
+	t.Cleanup(srv.Close)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions/ao-1/prompt/reload", "")
+	if status != http.StatusOK {
+		t.Fatalf("reload prompt = %d, want 200; body=%s", status, body)
+	}
+	var reloaded struct {
+		OK                     bool   `json:"ok"`
+		SessionID              string `json:"sessionId"`
+		ProviderConversationID string `json:"providerConversationId"`
+		BranchID               string `json:"branchId"`
+	}
+	mustJSON(t, body, &reloaded)
+	if !reloaded.OK || reloaded.SessionID != "ao-1" ||
+		reloaded.ProviderConversationID != "replaced-conv" || reloaded.BranchID != "branch-1" {
+		t.Fatalf("reload response = %#v", reloaded)
+	}
+
+	body, status, _ = doRequest(t, srv, "POST", "/api/v1/sessions/ao-9/prompt/reload", "")
+	if status != http.StatusConflict {
+		t.Fatalf("terminated reload prompt = %d, want 409; body=%s", status, body)
+	}
+
+	body, status, _ = doRequest(t, srv, "POST", "/api/v1/sessions/ao-404/prompt/reload", "")
+	if status != http.StatusNotFound {
+		t.Fatalf("unknown session reload prompt = %d, want 404; body=%s", status, body)
 	}
 }

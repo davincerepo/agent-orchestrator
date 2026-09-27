@@ -85,6 +85,7 @@ type SessionService interface {
 	SpawnOrchestrator(ctx context.Context, projectID domain.ProjectID, clean bool, requestedMode domain.SessionMode, approval domain.PermissionMode) (domain.Session, error)
 	Get(ctx context.Context, id domain.SessionID) (domain.Session, error)
 	Restore(ctx context.Context, id domain.SessionID) (sessionsvc.RestoreOutcome, error)
+	ReloadSessionPrompt(ctx context.Context, id domain.SessionID) (ports.ChatPromptReloadResult, error)
 	ExitAgent(ctx context.Context, id domain.SessionID) (sessionsvc.ExitAgentOutcome, error)
 	ResumeAgent(ctx context.Context, id domain.SessionID) (sessionsvc.ResumeAgentOutcome, error)
 	SwitchAgent(ctx context.Context, id domain.SessionID, in sessionsvc.SwitchAgentInput) (domain.AgentSwitch, error)
@@ -193,6 +194,7 @@ func (c *SessionsController) Register(r chi.Router) {
 	r.Put("/sessions/{sessionId}/reviewer", c.setReviewer)
 	r.Put("/sessions/{sessionId}/auto-review", c.setAutoReview)
 	r.Post("/sessions/{sessionId}/restore", c.restore)
+	r.Post("/sessions/{sessionId}/prompt/reload", c.reloadPrompt)
 	r.Post("/sessions/{sessionId}/exit-agent", c.exitAgent)
 	r.Post("/sessions/{sessionId}/resume-agent", c.resumeAgent)
 	r.Post("/sessions/{sessionId}/switch-agent", c.switchAgent)
@@ -1255,6 +1257,22 @@ func (c *SessionsController) restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	envelope.WriteJSON(w, http.StatusOK, RestoreSessionResponse{OK: true, SessionID: sessionID(r), RestoreMode: out.Mode, Session: sessionView(out.Session)})
+}
+
+func (c *SessionsController) reloadPrompt(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, "POST", "/api/v1/sessions/{sessionId}/prompt/reload")
+		return
+	}
+	out, err := c.Svc.ReloadSessionPrompt(r.Context(), sessionID(r))
+	if err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, ReloadSessionPromptResponse{
+		OK: true, SessionID: sessionID(r),
+		ProviderConversationID: out.ProviderConversationID, BranchID: out.BranchID,
+	})
 }
 
 func (c *SessionsController) pin(w http.ResponseWriter, r *http.Request) {

@@ -63,6 +63,13 @@ var (
 	// ErrChatConfigOptionInvalid means a client named an unknown option, sent the
 	// wrong value type, or selected a value the provider did not advertise.
 	ErrChatConfigOptionInvalid = errors.New("chat config option value is invalid")
+	// ErrChatTurnRunning means the provider conversation has a turn in flight or
+	// queued, so an operation that needs the conversation settled must be retried
+	// once it finishes. It is a conflict over timing, never a failure.
+	ErrChatTurnRunning = errors.New("a provider turn is still running")
+	// ErrChatPromptReloadUnsupported means the driver cannot replace standing
+	// instructions on a copy of its conversation.
+	ErrChatPromptReloadUnsupported = errors.New("chat driver cannot replace the standing prompt")
 	// ErrChatPermissionModeUnsupported means the requested AO approval policy has
 	// no enforced mapping in this provider. Drivers must return it instead of
 	// silently running with a different permission policy.
@@ -666,6 +673,26 @@ type (
 	ChatForker interface {
 		Fork(ctx context.Context, lastProviderTurnID *string) (providerConversationID string, err error)
 	}
+	// ChatPromptRefresher replaces the standing instructions on a copy of the
+	// conversation that inherits its dialogue history. It returns the new
+	// provider conversation id; the caller resumes that conversation with the
+	// same system prompt so the replacement takes effect.
+	//
+	// Both supported providers persist standing instructions inside the native
+	// conversation record (Codex as developer-role messages in the rollout,
+	// Claude Code as per-turn prompt snapshots in the transcript), which is why
+	// an in-place update is impossible: the copy deliberately omits those
+	// prompt-bearing records while every dialogue item is preserved verbatim.
+	ChatPromptRefresher interface {
+		RefreshStandingPrompt(ctx context.Context, systemPrompt string) (providerConversationID string, err error)
+	}
+	// ChatDriverPromptRefresher is the driver-level form of ChatPromptRefresher
+	// for providers whose copy is prepared from durable native records alone,
+	// with no live provider connection involved. Env locates the native config
+	// directory the same way NativeCheckpointRequest.Env does.
+	ChatDriverPromptRefresher interface {
+		RefreshStandingPrompt(ctx context.Context, providerConversationID, systemPrompt string, env map[string]string) (newProviderConversationID string, err error)
+	}
 	// ChatInheritedHistory proves native ancestry and expresses the supplied
 	// replay in an ancestor's ID namespace. Nil means ancestry is unverified.
 	// Event order and content must be preserved; callers still verify each copy.
@@ -693,6 +720,15 @@ type (
 		ReloadMCPServers(ctx context.Context) ([]ChatMCPServer, error)
 	}
 )
+
+// ChatPromptReloadResult identifies the replacement conversation a standing
+// prompt reload produced.
+type ChatPromptReloadResult struct {
+	// ProviderConversationID is the new native conversation handle.
+	ProviderConversationID string
+	// BranchID is the durable branch now owning the conversation head.
+	BranchID string
+}
 
 // ChatTurnRef identifies a turn the provider accepted.
 type ChatTurnRef struct {
