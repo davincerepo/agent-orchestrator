@@ -179,9 +179,9 @@ func registryDriver(driver fakeDriver, refresher *driverRefresher, withRefresher
 func TestReloadStandingPromptRebindsThroughConversationRefresher(t *testing.T) {
 	h := newReloadHarness(t, false)
 
-	result, err := h.svc.ReloadStandingPrompt(context.Background(), testSession, "new standing prompt")
+	result, err := h.svc.ReloadChatPrompt(context.Background(), testSession, "new standing prompt")
 	if err != nil {
-		t.Fatalf("ReloadStandingPrompt: %v", err)
+		t.Fatalf("ReloadChatPrompt: %v", err)
 	}
 	if result.ProviderConversationID != "thread-replaced" {
 		t.Errorf("result conversation = %q, want thread-replaced", result.ProviderConversationID)
@@ -225,9 +225,9 @@ func TestReloadStandingPromptRebindsThroughConversationRefresher(t *testing.T) {
 func TestReloadStandingPromptUsesDriverRefresherForFilePreparedCopies(t *testing.T) {
 	h := newReloadHarness(t, true)
 
-	result, err := h.svc.ReloadStandingPrompt(context.Background(), testSession, "new standing prompt")
+	result, err := h.svc.ReloadChatPrompt(context.Background(), testSession, "new standing prompt")
 	if err != nil {
-		t.Fatalf("ReloadStandingPrompt: %v", err)
+		t.Fatalf("ReloadChatPrompt: %v", err)
 	}
 	if result.ProviderConversationID != "transcript-replaced" {
 		t.Errorf("result conversation = %q, want transcript-replaced", result.ProviderConversationID)
@@ -253,7 +253,7 @@ func TestReloadStandingPromptUsesDriverRefresherForFilePreparedCopies(t *testing
 func TestReloadStandingPromptRefusesUnsupportedProvider(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.svc.ReloadStandingPrompt(context.Background(), testSession, "new prompt")
+	_, err := h.svc.ReloadChatPrompt(context.Background(), testSession, "new prompt")
 	if !errors.Is(err, chatsvc.ErrPromptReloadUnsupported) {
 		t.Fatalf("err = %v, want ErrPromptReloadUnsupported", err)
 	}
@@ -270,7 +270,7 @@ func TestReloadStandingPromptRefusesBusyControllerAndDoesNotCopy(t *testing.T) {
 		t.Fatalf("Send: %v", err)
 	}
 
-	_, err := h.svc.ReloadStandingPrompt(context.Background(), testSession, "new prompt")
+	_, err := h.svc.ReloadChatPrompt(context.Background(), testSession, "new prompt")
 	if !errors.Is(err, chatsvc.ErrTurnRunning) {
 		t.Fatalf("busy reload err = %v, want ErrTurnRunning", err)
 	}
@@ -285,7 +285,7 @@ func TestReloadStandingPromptReportsCopyFailureAndKeepsSource(t *testing.T) {
 	h.source.refreshErr = errors.New("rollout not found")
 	h.source.mu.Unlock()
 
-	_, err := h.svc.ReloadStandingPrompt(context.Background(), testSession, "new prompt")
+	_, err := h.svc.ReloadChatPrompt(context.Background(), testSession, "new prompt")
 	if err == nil {
 		t.Fatalf("reload with failing copy unexpectedly succeeded")
 	}
@@ -307,7 +307,7 @@ func TestReloadStandingPromptRestoresSourceWhenReplacementResumeFails(t *testing
 	h.state.failResumeFor = "thread-replaced"
 	h.state.mu.Unlock()
 
-	if _, err := h.svc.ReloadStandingPrompt(context.Background(), testSession, "new prompt"); err == nil {
+	if _, err := h.svc.ReloadChatPrompt(context.Background(), testSession, "new prompt"); err == nil {
 		t.Fatalf("reload with failing resume unexpectedly succeeded")
 	}
 	// The restore path resumes the original conversation and reactivates its

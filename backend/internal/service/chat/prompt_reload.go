@@ -46,11 +46,11 @@ func resolvePromptRefresher(source *Controller, cfg StartConfig, driver ports.Ch
 	return nil, ErrPromptReloadUnsupported
 }
 
-// ReloadStandingPrompt replaces the session's standing instructions by copying
+// ReloadChatPrompt replaces the session's standing instructions by copying
 // its provider conversation and rebinding to the copy. Refused while a turn is
 // running or queued; a failure after the source controller closed restores the
 // original conversation rather than leaving the session without one.
-func (s *Service) ReloadStandingPrompt(
+func (s *Service) ReloadChatPrompt(
 	ctx context.Context,
 	id domain.SessionID,
 	systemPrompt string,
