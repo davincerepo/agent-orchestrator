@@ -102,6 +102,13 @@ type restoreSessionResponse struct {
 	Session   sessionDTO `json:"session"`
 }
 
+type reloadSessionPromptResponse struct {
+	OK                     bool   `json:"ok"`
+	SessionID              string `json:"sessionId"`
+	ProviderConversationID string `json:"providerConversationId"`
+	BranchID               string `json:"branchId"`
+}
+
 type exitAgentResponse struct {
 	OK        bool       `json:"ok"`
 	SessionID string     `json:"sessionId"`
@@ -195,6 +202,7 @@ func newSessionCommand(ctx *commandContext) *cobra.Command {
 	cmd.AddCommand(newSessionGetCommand(ctx))
 	cmd.AddCommand(newSessionKillCommand(ctx))
 	cmd.AddCommand(newSessionRestoreCommand(ctx))
+	cmd.AddCommand(newSessionReloadPromptCommand(ctx))
 	cmd.AddCommand(newSessionExitAgentCommand(ctx))
 	cmd.AddCommand(newSessionResumeAgentCommand(ctx))
 	cmd.AddCommand(newSessionRenameCommand(ctx))
@@ -277,6 +285,25 @@ func newSessionRestoreCommand(ctx *commandContext) *cobra.Command {
 		},
 	}
 	addSessionProjectFlag(cmd.Flags(), &opts.project, "Project id to scope the lookup")
+	return cmd
+}
+
+func newSessionReloadPromptCommand(ctx *commandContext) *cobra.Command {
+	var opts sessionOptions
+	cmd := &cobra.Command{
+		Use:   "reload-prompt <id>",
+		Short: "Replace the session's standing prompt from current project rules",
+		Args:  oneSessionIDArg,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := normalizeSessionID(args[0])
+			if err != nil {
+				return err
+			}
+			return ctx.reloadSessionPrompt(cmd.Context(), cmd, id, opts)
+		},
+	}
+	addSessionProjectFlag(cmd.Flags(), &opts.project, "Project id to scope the lookup")
+	cmd.Flags().BoolVar(&opts.json, "json", false, "Output as JSON")
 	return cmd
 }
 
@@ -641,6 +668,29 @@ func (c *commandContext) restoreSession(ctx context.Context, cmd *cobra.Command,
 		if _, err := fmt.Fprintf(out, "  project: %s\n", res.Session.ProjectID); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (c *commandContext) reloadSessionPrompt(ctx context.Context, cmd *cobra.Command, id string, opts sessionOptions) error {
+	if opts.project != "" {
+		if _, err := c.fetchScopedSession(ctx, id, opts.project); err != nil {
+			return err
+		}
+	}
+	var res reloadSessionPromptResponse
+	if err := c.postJSON(ctx, "sessions/"+url.PathEscape(id)+"/prompt/reload", struct{}{}, &res); err != nil {
+		return err
+	}
+	if opts.json {
+		return writeJSON(cmd.OutOrStdout(), res)
+	}
+	out := cmd.OutOrStdout()
+	if _, err := fmt.Fprintf(out, "session %s prompt reloaded\n", res.SessionID); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  provider conversation: %s\n", res.ProviderConversationID); err != nil {
+		return err
 	}
 	return nil
 }

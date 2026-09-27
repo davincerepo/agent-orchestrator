@@ -88,6 +88,12 @@ type interfaceTransitionCommander interface {
 	AcknowledgeInterfaceTransitionNotice(context.Context, domain.SessionID, string) (domain.SessionInterfaceTransition, error)
 }
 
+// promptReloadCommander keeps the standing-prompt reload optional for focused
+// service fakes while production delegates to Session Manager.
+type promptReloadCommander interface {
+	ReloadSessionPrompt(context.Context, domain.SessionID) (ports.ChatPromptReloadResult, error)
+}
+
 // exitAgentCommander keeps the process-only lifecycle optional for focused
 // service fakes while production delegates to Session Manager.
 type exitAgentCommander interface {
@@ -727,6 +733,19 @@ func (s *Service) CancelInterfaceTransition(ctx context.Context, id domain.Sessi
 	return toAPIError(manager.CancelInterfaceTransition(ctx, id))
 }
 
+// ReloadSessionPrompt rebinds a live chat session to a copy of its provider
+// conversation that carries the same dialogue under freshly recomputed
+// standing instructions.
+func (s *Service) ReloadSessionPrompt(ctx context.Context, id domain.SessionID) (ports.ChatPromptReloadResult, error) {
+	manager, ok := s.manager.(promptReloadCommander)
+	if !ok {
+		return ports.ChatPromptReloadResult{}, apierr.Conflict(
+			"PROMPT_RELOAD_UNAVAILABLE", "This build cannot replace a session's standing prompt", nil)
+	}
+	result, err := manager.ReloadSessionPrompt(ctx, id)
+	return result, toAPIError(err)
+}
+
 // AcknowledgeInterfaceTransitionNotice durably dismisses one terminal failure
 // or recovery notice while retaining the transition record for diagnostics.
 func (s *Service) AcknowledgeInterfaceTransitionNotice(
@@ -1262,6 +1281,13 @@ func mapSessionError(err error) error {
 		return apierr.Conflict("SESSION_MODE_UNSUPPORTED", err.Error(), nil)
 	case errors.Is(err, ports.ErrChatDriverUnavailable):
 		return apierr.Conflict("CHAT_DRIVER_UNAVAILABLE", err.Error(), nil)
+	case errors.Is(err, ports.ErrChatTurnRunning):
+		return apierr.Conflict("CHAT_TURN_RUNNING",
+			"A provider turn is still running; retry once it finishes", nil)
+	case errors.Is(err, ports.ErrChatPromptReloadUnsupported):
+		return apierr.Conflict("PROMPT_RELOAD_UNSUPPORTED", err.Error(), nil)
+	case errors.Is(err, sessionmanager.ErrPromptReloadUnavailable):
+		return apierr.Conflict("PROMPT_RELOAD_UNAVAILABLE", err.Error(), nil)
 	case errors.Is(err, ports.ErrChatDriverIncompatible):
 		return apierr.Conflict("CHAT_DRIVER_INCOMPATIBLE", err.Error(), nil)
 	case errors.Is(err, ports.ErrChatAuthRequired):

@@ -341,7 +341,11 @@ func (d *Driver) Start(ctx context.Context, cfg ports.ChatStartConfig) (ports.Ch
 		return nil, errors.New("thread/start returned no thread id")
 	}
 
-	conv.start(resp.Thread.ID, resp.Model, resp.ReasoningEffort)
+	conv.start(resp.Thread.ID, resp.Model, resp.ReasoningEffort, threadLaunchContext{
+		workdir:     cfg.WorkspacePath,
+		permissions: cfg.Permissions,
+		codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+	})
 	return conv, nil
 }
 
@@ -368,7 +372,11 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		// The host preserved the already-initialized app-server connection and its
 		// loaded thread. Host replay bridges output and unresolved server requests
 		// across the daemon detach without waiting for the active turn to settle.
-		conv.start(cfg.ProviderConversationID, cfg.Model, cfg.Effort)
+		conv.start(cfg.ProviderConversationID, cfg.Model, cfg.Effort, threadLaunchContext{
+			workdir:     cfg.WorkspacePath,
+			permissions: cfg.Permissions,
+			codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+		})
 		return conv, nil
 	}
 
@@ -409,7 +417,11 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		return nil, fmt.Errorf("%w: %w", ports.ErrChatResumeFailed, err)
 	}
 
-	conv.start(cfg.ProviderConversationID, resp.Model, resp.ReasoningEffort)
+	conv.start(cfg.ProviderConversationID, resp.Model, resp.ReasoningEffort, threadLaunchContext{
+		workdir:     cfg.WorkspacePath,
+		permissions: cfg.Permissions,
+		codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+	})
 	return conv, nil
 }
 

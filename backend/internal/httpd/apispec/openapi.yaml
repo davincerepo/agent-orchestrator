@@ -5349,6 +5349,51 @@ paths:
         preview
       tags:
       - sessions
+  /api/v1/sessions/{sessionId}/prompt/reload:
+    post:
+      operationId: reloadSessionPrompt
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReloadSessionPromptResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Replace the session's standing prompt on a copy of its provider conversation
+      tags:
+      - sessions
   /api/v1/sessions/{sessionId}/restore:
     post:
       operationId: restoreSession
@@ -10686,6 +10731,22 @@ components:
           type: array
       required:
       - servers
+      type: object
+    ReloadSessionPromptResponse:
+      properties:
+        branchId:
+          type: string
+        ok:
+          type: boolean
+        providerConversationId:
+          type: string
+        sessionId:
+          type: string
+      required:
+      - ok
+      - sessionId
+      - providerConversationId
+      - branchId
       type: object
     RemoveProjectResult:
       properties:

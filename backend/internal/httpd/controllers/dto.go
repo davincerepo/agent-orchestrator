@@ -751,6 +751,14 @@ type ResumeAgentResponse struct {
 	Session    SessionView                `json:"session"`
 }
 
+// ReloadSessionPromptResponse is the body of POST /api/v1/sessions/{sessionId}/prompt/reload.
+type ReloadSessionPromptResponse struct {
+	OK                     bool             `json:"ok"`
+	SessionID              domain.SessionID `json:"sessionId"`
+	ProviderConversationID string           `json:"providerConversationId"`
+	BranchID               string           `json:"branchId"`
+}
+
 // StartSessionInterfaceTransitionRequest is the body of POST
 // /api/v1/sessions/{sessionId}/interface-transition.
 type StartSessionInterfaceTransitionRequest struct {
