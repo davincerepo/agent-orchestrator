@@ -79,5 +79,11 @@ Codex 时序略不同：③ 的 `thread/start` 带 `developerInstructions` 时�
 
 - 依赖 codex `thread/inject_items`（0.157.0 无实验门禁）与 Claude transcript 的 `prompt_snapshot`
   附件类型；上游格式变化时以实验脚本（本分支 PR 描述附结果）重新验证。
+- **集成 checklist**（与 `fleet/feat/model-parameters` 共存时，作为 merge 冲突解决的语义部分补上，
+  common 尚无这些字段故分支代码不可直接引用）：
+  - codexappserver `RefreshStandingPrompt`：快照读取 `threadServiceTier` 并在替换线程的
+    `thread/start` 参数带 `serviceTier`；
+  - service/chat `ReloadStandingPrompt` 的 Resume 配置带 `cfg.ServiceTier`。
+  待这些字段随上游进入 common 后，本分支 rebase 即可直接引用，此条撤下。
 - 本分支基于 common，不含 `codex/fix-chat-history-edit` 临时补丁（按约定仅集成于 `main-fleet`，
   上游修复后撤下）；**连续两次重载的回归测试随 `main-fleet` 集成补充**。
