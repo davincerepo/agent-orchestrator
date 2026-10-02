@@ -27,7 +27,7 @@ func TestFleetModelParametersPersistAndClear(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("session: %v %v", found, err)
 	}
-	record.Metadata.ReasoningEffort = "high"
+	record.Metadata.Effort = "high"
 	record.Metadata.ServiceTier = "priority"
 	if err := store.UpdateSession(ctx, record); err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestFleetModelParametersPersistAndClear(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("reload: %v %v", found, err)
 	}
-	if restored.Metadata.ReasoningEffort != "high" || restored.Metadata.ServiceTier != "priority" {
+	if restored.Metadata.Effort != "high" || restored.Metadata.ServiceTier != "priority" {
 		t.Fatalf("launch snapshot = %+v", restored.Metadata)
 	}
 }
@@ -49,7 +49,7 @@ func TestFleetInterfaceModelParametersCommitAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec.Mode = domain.SessionModeChat
-	rec.Metadata.Model, rec.Metadata.ReasoningEffort, rec.Metadata.ServiceTier = "original", "high", "priority"
+	rec.Metadata.Model, rec.Metadata.Effort, rec.Metadata.ServiceTier = "original", "high", "priority"
 	if err := store.UpdateSession(ctx, rec); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestFleetInterfaceModelParametersCommitAndRollback(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rec.Metadata.Model != p.Model || rec.Metadata.ReasoningEffort != p.Effort || rec.Metadata.ServiceTier != p.ServiceTier {
+		if rec.Metadata.Model != p.Model || rec.Metadata.Effort != p.Effort || rec.Metadata.ServiceTier != p.ServiceTier {
 			t.Fatalf("session snapshot: %+v", rec.Metadata)
 		}
 		if conv.Settings.Model != p.Model || conv.Settings.ReasoningEffort != p.Effort || conv.Settings.ServiceTier != p.ServiceTier || conv.Settings.ApprovalMode != domain.PermissionModeAuto {

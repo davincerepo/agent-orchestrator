@@ -80,7 +80,7 @@ func TestFleetTerminalParametersUnknownFailureAndConcurrentChange(t *testing.T) 
 			m, store, _, _, _ := newTransitionManager(t, domain.SessionModeTUI)
 			rec := store.sessions["session-1"]
 			rec.Harness = domain.HarnessCodex
-			rec.Metadata.Model, rec.Metadata.ReasoningEffort, rec.Metadata.ServiceTier = "default-model", "medium", "priority"
+			rec.Metadata.Model, rec.Metadata.Effort, rec.Metadata.ServiceTier = "default-model", "medium", "priority"
 			store.sessions[rec.ID] = rec
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()

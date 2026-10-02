@@ -47,7 +47,7 @@ func TestFleetInterfaceParametersFollowSourceMode(t *testing.T) {
 			rec := st.sessions["session-1"]
 			rec.Harness = domain.HarnessCodex
 			rec.Metadata.Model = "stale-launch-model"
-			rec.Metadata.ReasoningEffort = "medium"
+			rec.Metadata.Effort = "medium"
 			rec.Metadata.ServiceTier = "default"
 			st.sessions[rec.ID] = rec
 			target := domain.SessionModeChat

@@ -55,3 +55,17 @@ func checkCallerProject(caller, ownProject, targetProject string) error {
 	}
 	return nil
 }
+
+// Dispatch binds an agent caller to its own project. Non-dispatch commands
+// continue to use the upstream project resolver and its explicit overrides.
+func (c *commandContext) resolveDispatchProject(ctx context.Context, explicit, caller, ownProject string) (projectDetails, error) {
+	if caller == "" {
+		return c.resolveSpawnProject(ctx, explicit)
+	}
+	if explicit != "" {
+		if err := checkCallerProject(caller, ownProject, strings.TrimSpace(explicit)); err != nil {
+			return projectDetails{}, err
+		}
+	}
+	return c.fetchProjectDetails(ctx, ownProject)
+}

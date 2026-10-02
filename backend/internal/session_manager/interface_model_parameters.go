@@ -24,7 +24,7 @@ func (m *Manager) interfaceModelParameters(ctx context.Context, rec domain.Sessi
 			return nil, err
 		}
 	} else {
-		config.Model, config.Effort, config.ServiceTier = rec.Metadata.Model, rec.Metadata.ReasoningEffort, rec.Metadata.ServiceTier
+		config.Model, config.Effort, config.ServiceTier = rec.Metadata.Model, rec.Metadata.Effort, rec.Metadata.ServiceTier
 	}
 	if domain.NormalizeSessionMode(rec.Mode) == domain.SessionModeChat {
 		store, ok := m.store.(interface {

@@ -55,7 +55,7 @@ func (s *Service) ReloadChatPrompt(
 	id domain.SessionID,
 	systemPrompt string,
 ) (ports.ChatPromptReloadResult, error) {
-	gate := s.controllerGate(id)
+	gate := s.controllerGate(domain.SessionConversationOwner(id))
 	if err := gate.lock(ctx); err != nil {
 		return ports.ChatPromptReloadResult{}, err
 	}
@@ -68,7 +68,7 @@ func (s *Service) ReloadChatPrompt(
 	if err != nil {
 		return ports.ChatPromptReloadResult{}, err
 	}
-	cfg, driver, err := s.branchLaunchConfig(id, source)
+	cfg, driver, err := s.branchLaunchConfig(source)
 	if err != nil {
 		return ports.ChatPromptReloadResult{}, err
 	}
@@ -157,7 +157,7 @@ func (s *Service) ReloadChatPrompt(
 	}
 	conversation := source.conversation
 	conversation.ActiveBranchID = branchID
-	replacement := newController(id, conversation, generation, source.harness, provider,
+	replacement := newController(id, source.owner(), conversation, generation, source.harness, provider,
 		s.store, s.activity, s.log, s.newID, s.now, s.onAccountChanged, s.onCodexCapacityChanged)
 	if err := s.store.CreateAndActivateConversationBranch(
 		detachedCtx, id, branch, generation, s.now(),
@@ -176,9 +176,9 @@ func (s *Service) ReloadChatPrompt(
 	// Later branch operations resume from the cached launch config; without this
 	// they would replay the superseded prompt back into the provider.
 	s.mu.Lock()
-	if cfg, ok := s.startConfigs[id]; ok {
+	if cfg, ok := s.startConfigs[source.owner()]; ok {
 		cfg.SystemPrompt = systemPrompt
-		s.startConfigs[id] = cfg
+		s.startConfigs[source.owner()] = cfg
 	}
 	s.mu.Unlock()
 	return ports.ChatPromptReloadResult{ProviderConversationID: providerConversationID, BranchID: branchID}, nil

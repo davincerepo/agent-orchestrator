@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Globe2, PanelRight, Plus } from "lucide-react";
+import { Globe2, Loader2, PanelRight, Plus } from "lucide-react";
 import { useBlocker } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import {
@@ -25,10 +25,14 @@ import {
 	SessionChatSurface,
 	type ConversationWorkState,
 } from "./chat/SessionChatSurface";
+import { CloudSessionChatSurface } from "./chat/CloudSessionChatSurface";
+import { ReviewerChatSurface } from "./chat/ReviewerChatSurface";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { NotificationCenter } from "./NotificationCenter";
 import { ResizeHandle } from "./ResizeHandle";
 import { SessionFileExplorer } from "./SessionFileExplorer";
+import { FilesTopbarHostContext } from "./files-topbar-host";
+import { CloudFileContentPane, CloudWorkspaceDiff } from "./CloudWorkspaceDiff";
 import { SessionFileTab } from "./SessionFileTabs";
 import { SessionFileWorkspace } from "./SessionFileWorkspace";
 import { SessionActionsMenu } from "./SessionActionsMenu";
@@ -46,6 +50,7 @@ import { SessionTopbarHost } from "./SessionTopbarPortal";
 import { TerminalSwitchAgentButton } from "./TerminalSwitchAgentButton";
 import { TopbarButton } from "./TopbarButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { MultiStepLoader } from "./ui/multi-step-loader";
 import { useBrowserView } from "../hooks/useBrowserView";
 import { useFileAnnotation } from "../hooks/useFileAnnotation";
 import { useResizable } from "../hooks/useResizable";
@@ -62,10 +67,20 @@ import {
 	useSessionInterfaceTransition,
 } from "../hooks/useSessionInterfaceTransition";
 import { useAgentSwitchRouteVisibility } from "../hooks/useAgentSwitchVisibility";
-import { useWorkspaceSession, workspaceQueryKey } from "../hooks/useWorkspaceQuery";
-import { cloudLifecycleStage, type CloudLifecycleStage } from "../lib/cloud-lifecycle";
+import {
+	toCloudWorkspaceSession,
+	useCloudSessionQuery,
+	useWorkspaceQuery,
+	useWorkspaceSession,
+	workspaceQueryKey,
+} from "../hooks/useWorkspaceQuery";
+import { useCloudGate } from "../hooks/useCloudGate";
+import { cloudLifecycleStage } from "../lib/cloud-lifecycle";
+import { subscribeSessionEventsBridged } from "../lib/cloud-cp/stream-bridge";
+import { useTerminalResetStore } from "../stores/terminal-reset-store";
 import { useCloudCp } from "../hooks/useCloudCp";
 import { useSessionHandoffMenu } from "../hooks/useSessionHandoffMenu";
+import { useSettings } from "../hooks/useSettings";
 import { clearSwitchAgentState } from "../hooks/useSwitchAgent";
 import { useWindowFullScreen } from "../hooks/useWindowFullScreen";
 import { apiClient, apiErrorCode, apiErrorMessage } from "../lib/api-client";
@@ -98,7 +113,7 @@ import { cn } from "../lib/utils";
 import { isOrchestratorSession, sessionIsActive } from "../types/workspace";
 import { terminalTargetBelongsToSession, type TerminalTarget } from "../types/terminal";
 import { matchesRendererShortcut } from "../stores/keybindings-store";
-import { useResolvedTheme, useUiStore, type InspectorView } from "../stores/ui-store";
+import { inspectorIsOpen, useResolvedTheme, useUiStore, type InspectorView } from "../stores/ui-store";
 import {
 	INSPECTOR_SEPARATOR_RESERVE_PX,
 	inspectorMaxWidthCss,
@@ -119,6 +134,9 @@ const CHAT_READABLE_MIN_PX = 560;
 // canvas workflow. This is still wide enough for the timeline and composer, and
 // is separate from the roomier utility-view floor above.
 const BROWSER_CHAT_MIN_PX = 440;
+// Files sizes like the other utility views (same default, cap and remembered
+// width); it only keeps a wider floor so its tree + preview stay usable.
+const FILES_WORKSPACE_MIN_PX = 460;
 type CenterFileOpenRequest = { commitSha?: string; editing: boolean; key: number; mode: FileViewMode; scope?: FileOpenOptions["scope"] };
 const EMPTY_AUXILIARY_TAB_ORDER: string[] = [];
 // The inspector tab labels respond to the tablist's remaining width. The
@@ -141,22 +159,17 @@ const shellTopbarHiddenByPlatform = hidesShellTopbar();
 const isMac = isMacPlatform();
 const noDragStyle = isMac ? ({ WebkitAppRegion: "no-drag" } as CSSProperties) : undefined;
 const newTerminalShortcutLabel = shortcutBindingLabel(defaultShortcutBindings("new-shell-terminal", isMac)[0], isMac);
-const sessionHeaderActions = (
-	<div
-		className="session-topbar-session-chrome flex shrink-0 items-center"
-		data-compact-session-chrome="false"
-	>
-		<ShellTopbar embedded />
-	</div>
-);
 
 type ReviewsResponse = components["schemas"]["ListReviewsResponse"];
 type SessionInterfaceTransition = components["schemas"]["SessionInterfaceTransition"];
 type ReviewerTerminalTarget = { handleId: string; harness: string };
+type ReviewerChatTarget = { reviewId: string; harness: string };
 type InterfaceSwitchDialogScope = {
 	sessionId: string;
 	targetMode: "chat" | "tui";
 	historyPolicy?: "strict" | "provider_history";
+	sourceBusy?: boolean;
+	sourceWaitingForInput?: boolean;
 };
 
 type WorkspaceLayoutMode = "utility" | "browser" | "files";
@@ -220,7 +233,7 @@ function inspectorSizing(view: InspectorView): InspectorSizing {
 	return {
 		chatMinWidth: CHAT_READABLE_MIN_PX,
 		defaultWidth: WORKSPACE_DEFAULT_PX,
-		minWidth: WORKSPACE_MIN_PX,
+		minWidth: view === "files" ? FILES_WORKSPACE_MIN_PX : WORKSPACE_MIN_PX,
 		maxPercent: WORKSPACE_MAX_PERCENT,
 		mode: view === "files" ? "files" : "utility",
 		storageKey: inspectorWidthStorageKey,
@@ -266,19 +279,28 @@ function previewRevealKey(previewUrl?: string, previewRevision?: number): string
 
 function browserIsVisible(sessionId: string, browserPoppedOut: boolean): boolean {
 	if (browserPoppedOut) return true;
-	const current = useUiStore.getState().inspectorSessions[sessionId];
-	return (current?.isOpen ?? true) && (current?.view ?? "summary") === "browser";
+	const { inspectorSessions } = useUiStore.getState();
+	return inspectorIsOpen(inspectorSessions, sessionId) && (inspectorSessions[sessionId]?.view ?? "summary") === "browser";
 }
 
 function reviewerTerminalFromReviews(data?: ReviewsResponse): ReviewerTerminalTarget | undefined {
+	if (data?.reviewerSurface?.mode === "chat") return undefined;
 	const handleId = data?.reviewerHandleId?.trim();
 	if (!handleId) return undefined;
 	const latest = data?.reviews?.find((review) => review.latestRun)?.latestRun;
 	return { handleId, harness: data?.reviewerHarness || latest?.harness || "codex" };
 }
 
+function reviewerChatFromReviews(data?: ReviewsResponse): ReviewerChatTarget | undefined {
+	const surface = data?.reviewerSurface;
+	if (surface?.mode !== "chat" || !surface.reviewId) return undefined;
+	return { reviewId: surface.reviewId, harness: surface.harness || "codex" };
+}
+
 type SessionViewProps = {
 	sessionId: string;
+	cloudOrgId?: string;
+	projectId?: string;
 };
 
 // Mirrors the left sidebar: a Motion gap takes layout width while a sibling
@@ -415,18 +437,154 @@ function SessionInspectorRail({
 // x-transform). Summary/Reviews/Files share a utility width, while Browser
 // automatically grows into a co-work canvas. Chat readability clamps either
 // profile before the conversation can become unusably narrow.
-function CloudLifecycleStatus({ stage }: { stage: CloudLifecycleStage }) {
+// Startup steps: 0 creating the workspace, 1 connecting to the worker,
+// 2 preparing the repository and agent, 3 connecting the terminal. The
+// workspace exists once the sandbox reaches "bootstrapping" (the provider
+// reports it running and AO is starting its worker inside); "requested" and
+// "provisioning" are still creating it.
+function cloudStartupStage(observedState: string | undefined, workerConnected: boolean, terminalOnly = false): number {
+	return terminalOnly ? 3
+		: workerConnected && (observedState === "bootstrapping" || observedState === "running") ? 2
+		: observedState === "bootstrapping" || observedState === "running" ? 1
+		: 0;
+}
+
+function CloudSessionLifecycleLoader({ sessionId, orgId, createdAt, observedState, workerConnected, terminalOnly, completed = false }: { sessionId: string; orgId: string; createdAt?: string; observedState?: string; workerConnected: boolean; terminalOnly: boolean; completed?: boolean }) {
 	const { t } = useTranslation();
-	const label = {
-		paused_by_coder: t("cloud.lifecycle.pausedByCoder"),
-		resuming_workspace: t("cloud.lifecycle.resumingWorkspace"),
-		waiting_for_coder_agent: t("cloud.lifecycle.connecting"),
-		starting_ao_worker: t("cloud.lifecycle.startingAoWorker"),
-		restoring_agent: t("cloud.lifecycle.restoringAgent"),
-		connected: t("cloud.lifecycle.connected"),
-	}[stage];
-	const settled = stage === "connected";
-	const paused = stage === "paused_by_coder";
+	const { baseUrl, client } = useCloudCp();
+	const factIndex = cloudStartupStage(observedState, workerConnected, terminalOnly);
+	const [factProgress, setFactProgress] = useState({ index: factIndex, since: createdAt ?? new Date().toISOString() });
+	const [remoteProgress, setRemoteProgress] = useState({ index: factIndex, since: createdAt ?? new Date().toISOString() });
+	const [progress, setProgress] = useState({ index: terminalOnly ? 3 : 0, since: createdAt ?? new Date().toISOString() });
+	const replayCutoff = useRef(Date.now() - 60 * 60 * 1_000);
+	useEffect(() => {
+		if (!baseUrl || !orgId || terminalOnly) return;
+		const controller = new AbortController();
+		void subscribeSessionEventsBridged({
+			baseUrl,
+			orgId,
+			sessionId,
+			after: 0,
+			signal: controller.signal,
+			onEvent: (event) => {
+				const occurredAt = Date.parse(event.createdAt);
+				if (event.sessionId !== sessionId || !Number.isFinite(occurredAt) || occurredAt < replayCutoff.current) return;
+				// sandbox.provisioning only marks the start of workspace creation;
+				// the workspace's completion comes from the observed state above.
+				const index = event.type === "worker.connected" || event.type === "worker.ready" ? 2
+					: event.type === "agent.ready" ? 3
+					: undefined;
+				if (index !== undefined) setProgress((current) => index > current.index ? { index, since: event.createdAt } : current);
+			},
+		});
+		return () => controller.abort();
+	}, [baseUrl, orgId, sessionId, terminalOnly]);
+	useEffect(() => {
+		setFactProgress((current) => current.index === factIndex ? current : { index: factIndex, since: new Date().toISOString() });
+	}, [factIndex]);
+	useEffect(() => {
+		if (!orgId || terminalOnly) return;
+		const controller = new AbortController();
+		let timer: number | undefined;
+		const poll = async () => {
+			try {
+				const { session } = await client.getSession(orgId, sessionId, { signal: controller.signal });
+				if (controller.signal.aborted) return;
+				const index = cloudStartupStage(session.observedState, session.runtimeConnected);
+				setRemoteProgress((current) => current.index === index ? current : { index, since: new Date().toISOString() });
+			} catch {
+				// Keep the last confirmed stage and retry while the loader is visible.
+			} finally {
+				if (!controller.signal.aborted) timer = window.setTimeout(() => void poll(), 2_000);
+			}
+		};
+		void poll();
+		return () => {
+			controller.abort();
+			if (timer !== undefined) window.clearTimeout(timer);
+		};
+	}, [client, orgId, sessionId, terminalOnly]);
+	useEffect(() => {
+		if (!orgId || terminalOnly) return;
+		const controller = new AbortController();
+		let after = 0;
+		let timer: number | undefined;
+		const poll = async () => {
+			try {
+				let latest: { index: number; since: string } | undefined;
+				for (;;) {
+					const page = await client.listChatEvents(orgId, sessionId, { after, limit: 500 }, { signal: controller.signal });
+					if (controller.signal.aborted) return;
+					for (const event of page.events) {
+						// Complete the replay before painting a stage. Old epochs can
+						// contain agent.ready long before this workspace restart.
+						const occurredAt = Date.parse(event.createdAt);
+						if (!Number.isFinite(occurredAt) || occurredAt < replayCutoff.current) continue;
+						const index = event.type === "worker.connected" || event.type === "worker.ready" ? 2
+							: event.type === "agent.ready" ? 3
+							: undefined;
+						if (index !== undefined) latest = { index, since: event.createdAt };
+					}
+					after = page.nextAfter;
+					if (!page.hasMore) break;
+				}
+				if (latest) setProgress((current) => latest.index > current.index ? latest : current);
+			} catch {
+				// Keep the current stage and retry while the session is loading.
+			} finally {
+				if (!controller.signal.aborted) timer = window.setTimeout(() => void poll(), 2_000);
+			}
+		};
+		void poll();
+		return () => {
+			controller.abort();
+			if (timer !== undefined) window.clearTimeout(timer);
+		};
+	}, [client, orgId, sessionId, terminalOnly]);
+	const steps = useMemo(() => [
+		t("terminal.sessionLoader.workspace"),
+		t("terminal.sessionLoader.worker"),
+		t("terminal.sessionLoader.repositoryAgent"),
+		t("terminal.sessionLoader.terminal"),
+	], [t]);
+	const confirmedFacts = remoteProgress.index > factProgress.index ? remoteProgress : factProgress;
+	const target = confirmedFacts.index > progress.index ? confirmedFacts : progress;
+	return (
+		<div
+			// Sits at the session-pane chrome level: it must cover the loading
+			// pane's content (topbar/terminal) but MUST stay below the app overlay
+			// layer (`z-overlay`, dialogs/dropdowns). A raw high z (this was `z-[200]`)
+			// painted over any shell modal opened while a cloud session loads — the
+			// New Task dialog, the project three-dots menu — leaving it invisible
+			// behind the loader while Radix still applied `body{pointer-events:none}`,
+			// which froze the whole UI (sidebar included). Keep this <= z-overlay.
+			className={cn("absolute inset-0 z-chrome grid place-items-center bg-background", completed && "cloud-session-loader--complete pointer-events-none")}
+			data-testid="cloud-session-loader-screen"
+		>
+			<MultiStepLoader
+				ariaLabel={t("terminal.sessionLoader.label")}
+				activeIndex={completed ? 3 : target.index}
+				complete={completed}
+				steps={steps}
+			/>
+		</div>
+	);
+}
+
+function CloudInterfaceSwitchLoader({ target }: { target: "chat" | "tui" }) {
+	const label = `Switching to ${target === "chat" ? "Chat UI" : "Terminal UI"}`;
+	return (
+		<div className="absolute inset-0 z-chrome grid place-items-center bg-background" data-testid="cloud-interface-switch-loader-screen">
+			<div role="status" aria-live="polite" aria-label={label} className="flex flex-col items-center gap-3 text-muted-foreground">
+				<Loader2 aria-hidden="true" className="size-6 animate-spin" />
+				<span className="text-sm">{label}</span>
+			</div>
+		</div>
+	);
+}
+
+function CloudPausedStatus() {
+	const { t } = useTranslation();
 	return (
 		<motion.div
 			animate={{ opacity: 1, y: 0 }}
@@ -434,25 +592,27 @@ function CloudLifecycleStatus({ stage }: { stage: CloudLifecycleStage }) {
 			className={cn(
 				"absolute right-3 top-3 z-20 flex h-7 items-center gap-2 rounded-sm border px-2.5",
 				"bg-background/92 font-mono text-[11px] tracking-tight shadow-sm backdrop-blur-sm",
-				settled ? "border-success/30 text-passive" : "border-border/80 text-foreground",
+				"border-border/80 text-foreground",
 			)}
-			data-cloud-lifecycle-stage={stage}
+			data-cloud-lifecycle-stage="paused_by_coder"
 			initial={{ opacity: 0, y: -4 }}
 			role="status"
 		>
 			<span
 				aria-hidden="true"
-				className={cn(
-					"size-1.5 rounded-full",
-					settled ? "bg-success" : paused ? "bg-warning" : "animate-pulse bg-primary",
-				)}
+				className="size-1.5 rounded-full bg-warning"
 			/>
-			{label}
+			{t("cloud.lifecycle.pausedByCoder")}
 		</motion.div>
 	);
 }
 
-export function SessionView({ sessionId }: SessionViewProps) {
+export function SessionView({ sessionId, cloudOrgId, projectId }: SessionViewProps) {
+	const currentSessionIdRef = useRef<string | null>(sessionId);
+	useEffect(() => {
+		currentSessionIdRef.current = sessionId;
+		return () => { currentSessionIdRef.current = null; };
+	}, [sessionId]);
 	const { t } = useTranslation();
 	const [confirmedDraftDiscard, setConfirmedDraftDiscard] = useState<{
 		sessionId: string;
@@ -537,15 +697,32 @@ export function SessionView({ sessionId }: SessionViewProps) {
 		[sessionId],
 	);
 	const queryClient = useQueryClient();
+	const { cloudEnabled } = useCloudGate();
 	const refreshWorkspaces = useCallback(
 		() => queryClient.invalidateQueries({ queryKey: workspaceQueryKey }),
 		[queryClient],
 	);
-	const workspaceQuery = useWorkspaceSession(sessionId);
+	const workspaceQuery = useWorkspaceQuery();
+	const workspaces = workspaceQuery.data ?? [];
+	const routedWorkspace = projectId ? workspaces.find((workspace) => workspace.id === projectId) : undefined;
+	const isCloudRoute = routedWorkspace?.kind === "cloud";
+	const listedSession = workspaces.flatMap((workspace) => workspace.sessions).find((s) => s.id === sessionId);
+	// Project-scoped navigation identifies Cloud routes immediately. The legacy
+	// cross-project route has no project id, so fall back to a direct CP lookup
+	// when the session is absent from the merged list. This keeps a fresh Cloud
+	// tab from ever being resolved through the local daemon during list-cache
+	// races or after restoring an old route.
+	const cloudRouteSession = useCloudSessionQuery(
+		cloudOrgId,
+		sessionId,
+		Boolean(cloudOrgId && (isCloudRoute || !listedSession)),
+	);
+	const localLookupEnabled = !cloudOrgId || Boolean(listedSession && !listedSession.cloud) || Boolean(!isCloudRoute && cloudRouteSession.isError);
+	const workspaceSessionQuery = useWorkspaceSession(sessionId, localLookupEnabled);
 	const { client: cloudCpClient } = useCloudCp();
 	const theme = useResolvedTheme();
-	const browserOnly = Boolean(workspaceQuery.data && isOrchestratorSession(workspaceQuery.data));
-	const isInspectorOpen = useUiStore((state) => state.inspectorSessions[sessionId]?.isOpen ?? !browserOnly);
+	const browserOnly = Boolean(workspaceSessionQuery.data && isOrchestratorSession(workspaceSessionQuery.data));
+	const isInspectorOpen = useUiStore((state) => inspectorIsOpen(state.inspectorSessions, sessionId));
 	const inspectorView = useUiStore((state) => browserOnly ? "browser" : state.inspectorSessions[sessionId]?.view ?? "summary");
 	const browserUnseen = useUiStore((state) => Boolean(state.inspectorSessions[sessionId]?.browserUnseen));
 	const setInspectorOpenForSession = useUiStore((state) => state.setInspectorOpen);
@@ -563,11 +740,13 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	const [inspectorSettledClosed, setInspectorSettledClosed] = useState(!isInspectorOpen);
 	const inspectorPanelVisible = isInspectorOpen || !inspectorSettledClosed;
 	const [terminalTarget, setTerminalTarget] = useState<TerminalTarget>({ kind: "worker" });
+	const [reviewerChatId, setReviewerChatId] = useState<string | null>(null);
 	const [browserPopOutState, setBrowserPopOutState] = useState<BrowserPopOutState>({
 		sessionId,
 		phase: "docked",
 	});
 	const [filesPoppedOut, setFilesPoppedOut] = useState(false);
+	const [filesPopoutTopbarHost, setFilesPopoutTopbarHost] = useState<HTMLDivElement | null>(null);
 	const [filesSplit, setFilesSplit] = useState(() => window.localStorage.getItem("ao.files.diffStyle") === "split");
 	const [filePreviewRequestsBySession, setFilePreviewRequestsBySession] = useState<
 		Record<string, { path: string; key: number }>
@@ -698,8 +877,82 @@ export function SessionView({ sessionId }: SessionViewProps) {
 
 	useEffect(() => stopTerminalLiveResize, [stopTerminalLiveResize]);
 
-	const session = workspaceQuery.data;
+	// A newly-created Cloud session can be routed before the paginated session
+	// list refresh completes. Resolve that exact row from Cloud so terminal and
+	// interface operations retain {orgId, sessionId} instead of falling back to
+	// the local daemon and surfacing SESSION_NOT_FOUND.
+	const directCloudWorkspace = cloudRouteSession.data
+		? workspaces.find(
+				(workspace) =>
+					workspace.kind === "cloud" && workspace.id === cloudRouteSession.data?.projectId,
+			)
+		: undefined;
+	const cloudSessionWorkspace = directCloudWorkspace ?? routedWorkspace;
+	const session =
+		listedSession ??
+		workspaceSessionQuery.data ??
+		(cloudOrgId && cloudRouteSession.data
+			? toCloudWorkspaceSession(
+					cloudRouteSession.data,
+					{
+						// A session lookup remains authoritative even if the projects list
+						// is refetching. Do not turn a real Cloud row into "Session not
+						// found" merely because its parent list is temporarily absent.
+						id: cloudSessionWorkspace?.id ?? cloudRouteSession.data.projectId,
+						displayName: cloudSessionWorkspace?.name ?? "Cloud project",
+					},
+					cloudOrgId,
+				)
+			: undefined);
 	const cloudStage = cloudLifecycleStage(session);
+	const cloudReconnecting = useTerminalResetStore((state) => Boolean(state.reconnecting[sessionId]));
+	const [terminalAttachment, setTerminalAttachment] = useState({ sessionId: "", attached: false });
+	const terminalAttached = terminalAttachment.sessionId === sessionId && terminalAttachment.attached;
+	const onSessionTerminalAttached = useCallback((attached: boolean) => {
+		setTerminalAttachment((current) => current.sessionId === sessionId && current.attached === attached
+			? current
+			: { sessionId, attached });
+	}, [sessionId]);
+	// Latch the session that has reached "connected" at least once (keyed on
+	// sessionId so it resets cleanly when the view switches sessions). After the
+	// first successful connect, a transient runtime-connection drop while the
+	// sandbox is still running (stage flips to "restoring_agent", e.g. the worker
+	// relay row cycles mid-turn) or a terminal reconnect must NOT re-raise the
+	// full-screen lifecycle loader over the terminal for the rest of the turn.
+	// Only a genuine workspace (re)start — VM stopped/resuming/provisioning/
+	// bootstrapping — should block after the session has connected once.
+	// Checkout and agent startup continue after the worker connects. Wait for
+	// the actual terminal attachment before dismissing the startup view.
+	const expectsTerminal = session?.mode !== "chat" && !browserOnly;
+	const sessionReady = expectsTerminal ? terminalAttached : cloudStage === "connected";
+	const connectedSessionRef = useRef("");
+	if (sessionReady) connectedSessionRef.current = sessionId;
+	const hasConnectedOnce = connectedSessionRef.current === sessionId;
+	const workspaceRestarting = cloudStage === "resuming_workspace"
+		|| cloudStage === "waiting_for_coder_agent"
+		|| cloudStage === "starting_ao_worker";
+	// After the first connect, the ONLY case we stop blocking on is
+	// "restoring_agent" while the sandbox is still running (a transient runtime
+	// relay drop mid-turn). A terminal re-mint (cloudReconnecting, covers a blank
+	// flash) and a genuine workspace restart still raise the loader.
+	const showLifecycleLoader = hasConnectedOnce
+		? (cloudReconnecting || workspaceRestarting)
+		: (cloudReconnecting || (cloudStage != null && cloudStage !== "paused_by_coder" && !sessionReady));
+	const loaderVisibleLongEnoughRef = useRef("");
+	const [completionDismissed, setCompletionDismissed] = useState(false);
+	useEffect(() => {
+		if (!showLifecycleLoader) return;
+		loaderVisibleLongEnoughRef.current = "";
+		setCompletionDismissed(false);
+		const timer = window.setTimeout(() => { loaderVisibleLongEnoughRef.current = sessionId; }, 200);
+		return () => window.clearTimeout(timer);
+	}, [sessionId, showLifecycleLoader]);
+	const showCompletedLoader = !showLifecycleLoader && sessionReady && loaderVisibleLongEnoughRef.current === sessionId && !completionDismissed;
+	useEffect(() => {
+		if (!showCompletedLoader) return;
+		const timer = window.setTimeout(() => setCompletionDismissed(true), 360);
+		return () => window.clearTimeout(timer);
+	}, [showCompletedLoader]);
 	const cloudResumeRef = useRef("");
 	const requestCloudResume = useCallback(async () => {
 		if (!session?.cloud) return;
@@ -721,7 +974,12 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			? "active"
 			: "history";
 	useAgentSwitchRouteVisibility(`session/${sessionId}`, routeVisibilityOperation);
-	const interfaceSwitch = useSessionInterfaceTransition(session?.id);
+	const interfaceContext = session
+		? (session.cloud ?? null)
+		: cloudOrgId
+			? { orgId: cloudOrgId }
+		: undefined;
+	const interfaceSwitch = useSessionInterfaceTransition(sessionId, interfaceContext);
 	useEffect(() => {
 		setConfirmedDraftDiscard(undefined);
 	}, [sessionId]);
@@ -830,7 +1088,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	const reviewerQuery = useQuery({
 		queryKey: ["session-reviews", sessionId],
 		enabled: Boolean(
-			window.ao && session && sessionIsActive(session) && !isOrchestratorSession(session) && session.prs.length > 0,
+			window.ao && session && !session.cloud && sessionIsActive(session) && !isOrchestratorSession(session) && session.prs.length > 0,
 		),
 		refetchInterval: (query) => {
 			const data = query.state.data as ReviewsResponse | undefined;
@@ -846,6 +1104,14 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	});
 	const availableReviewerTerminal = reviewerTerminalFromReviews(reviewerQuery.data);
 	const reviewerTerminal = session && sessionIsActive(session) ? availableReviewerTerminal : undefined;
+	const availableReviewerChat = reviewerChatFromReviews(reviewerQuery.data);
+	const reviewerChat = session && sessionIsActive(session) ? availableReviewerChat : undefined;
+	useEffect(() => {
+		if (!reviewerChatId || !reviewerQuery.isFetched) return;
+		if (availableReviewerChat?.reviewId !== reviewerChatId) {
+			setReviewerChatId(null);
+		}
+	}, [availableReviewerChat?.reviewId, reviewerChatId, reviewerQuery.isFetched]);
 
 	// Shell terminals opened inside a session live beside its pane as extra tabs,
 	// scoped to the session on screen so each session has its own shell set.
@@ -859,6 +1125,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 		const openShellKeys = shellTerminals.map((shell) => shell.handleId);
 		const available = [
 			...(reviewerTerminal ? [`reviewer:${reviewerTerminal.handleId}`] : []),
+			...(!reviewerTerminal && reviewerChat ? [`reviewer-chat:${reviewerChat.reviewId}`] : []),
 			...openFileKeys,
 			...openShellKeys,
 		];
@@ -868,7 +1135,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			if (!resolved.includes(key)) resolved.push(key);
 		}
 		return resolved;
-	}, [auxiliaryTabOrder, fileTabs.openPaths, reviewerTerminal, shellTerminals]);
+	}, [auxiliaryTabOrder, fileTabs.openPaths, reviewerChat, reviewerTerminal, shellTerminals]);
 	useEffect(() => {
 		setAuxiliaryTabOrderBySession((current) => {
 			const currentOrder = current[sessionId] ?? [];
@@ -955,6 +1222,16 @@ export function SessionView({ sessionId }: SessionViewProps) {
 				}));
 				return;
 			}
+			if (reviewerChat && key === `reviewer-chat:${reviewerChat.reviewId}`) {
+				setActiveShellTerminal(null);
+				setTerminalTarget({ kind: "worker" });
+				setReviewerChatId(reviewerChat.reviewId);
+				setFileTabsBySession((current) => ({
+					...current,
+					[sessionId]: activateSessionFile(current[sessionId] ?? EMPTY_SESSION_FILE_TABS, null),
+				}));
+				return;
+			}
 			const shell = shellTerminals.find((candidate) => candidate.handleId === key);
 			if (shell) {
 				setActiveShellTerminal(shell.handleId);
@@ -978,7 +1255,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 				[sessionId]: activateSessionFile(current[sessionId] ?? EMPTY_SESSION_FILE_TABS, null),
 			}));
 		},
-		[reviewerTerminal, sessionId, shellTerminals, setActiveShellTerminal],
+		[reviewerChat, reviewerTerminal, sessionId, shellTerminals, setActiveShellTerminal],
 	);
 	const adjacentAuxiliaryTab = useCallback(
 		(closingKey: string) => {
@@ -993,6 +1270,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 		(handleId: string) => {
 			const shell = shellTerminals.find((s) => s.handleId === handleId);
 			if (!shell) return;
+			setReviewerChatId(null);
 			setActiveShellTerminal(shell.handleId);
 			setFileTabsBySession((current) => ({
 				...current,
@@ -1040,12 +1318,14 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	const selectSessionTerminal = useCallback(() => {
 		setActiveShellTerminal(null);
 		setTerminalTarget({ kind: "worker" });
+		setReviewerChatId(null);
 		setFileTabsBySession((current) => ({
 			...current,
 			[sessionId]: activateSessionFile(current[sessionId] ?? EMPTY_SESSION_FILE_TABS, null),
 		}));
 	}, [sessionId, setActiveShellTerminal]);
 	const selectReviewerTerminal = useCallback((target: ReviewerTerminalTarget) => {
+		setReviewerChatId(null);
 		setActiveShellTerminal(null);
 		setTerminalTarget({ kind: "reviewer", handleId: target.handleId, harness: target.harness, sessionId });
 		setFileTabsBySession((current) => ({
@@ -1053,7 +1333,17 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			[sessionId]: activateSessionFile(current[sessionId] ?? EMPTY_SESSION_FILE_TABS, null),
 		}));
 	}, [sessionId, setActiveShellTerminal]);
+	const selectReviewerChat = useCallback((reviewId: string) => {
+		setActiveShellTerminal(null);
+		setTerminalTarget({ kind: "worker" });
+		setReviewerChatId(reviewId);
+		setFileTabsBySession((current) => ({
+			...current,
+			[sessionId]: activateSessionFile(current[sessionId] ?? EMPTY_SESSION_FILE_TABS, null),
+		}));
+	}, [sessionId, setActiveShellTerminal]);
 	const openCenterFile = useCallback((path: string, options?: FileOpenOptions) => {
+		setReviewerChatId(null);
 		setCenterFileRequestsBySession((current) => {
 			const sessionRequests = current[sessionId] ?? {};
 			return {
@@ -1092,6 +1382,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 		});
 	}, [sessionId]);
 	const activateCenterFile = useCallback((path: string) => {
+		setReviewerChatId(null);
 		setFileTabsBySession((current) => ({
 			...current,
 			[sessionId]: activateSessionFile(current[sessionId] ?? EMPTY_SESSION_FILE_TABS, path),
@@ -1115,21 +1406,11 @@ export function SessionView({ sessionId }: SessionViewProps) {
 		if (!activeShellTerminalHandleId) return;
 		const shell = shellTerminals.find((s) => s.handleId === activeShellTerminalHandleId);
 		if (!shell) return;
-		setTerminalTarget((current) =>
-			current.kind === "shell" &&
-			current.handleId === shell.handleId &&
-			current.generation === shell.createdAt &&
-			current.title === shell.title
-				? current
-				: {
-						generation: shell.createdAt,
-						kind: "shell",
-						handleId: shell.handleId,
-						sessionId,
-						title: shell.title,
-					},
-		);
-	}, [activeShellTerminalHandleId, sessionId, shellTerminals]);
+		if (terminalTarget.kind === "shell" && terminalTarget.handleId === shell.handleId &&
+			terminalTarget.generation === shell.createdAt && terminalTarget.title === shell.title &&
+			!fileTabs.activePath && !reviewerChatId) return;
+		selectShellTerminal(shell.handleId);
+	}, [activeShellTerminalHandleId, fileTabs.activePath, reviewerChatId, selectShellTerminal, shellTerminals, terminalTarget]);
 
 	// If the pane is pointed at a shell that is not in THIS session's strip — e.g.
 	// after navigating to a different session whose globally-active shell belongs
@@ -1216,7 +1497,21 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	);
 
 	const activeInterfaceTransition = interfaceTransitionIsActive(interfaceSwitch.transition);
-	const hasInterfaceNotice = interfaceTransitionHasUnacknowledgedNotice(interfaceSwitch.transition);
+	const cloudDrainWaiting = Boolean(
+		interfaceContext &&
+			((interfaceSwitch.starting && interfaceSwitch.startingPolicy === "drain") ||
+				(interfaceSwitch.transition?.policy === "drain" &&
+					["requested", "preflighting", "draining"].includes(interfaceSwitch.transition.phase))),
+	);
+	const showInterfaceSwitchLoader = Boolean(
+		interfaceContext && !cloudDrainWaiting && (interfaceSwitch.starting || activeInterfaceTransition || interfaceSwitch.settling ||
+			(interfaceSwitch.transition?.phase === "completed" &&
+				session?.mode !== interfaceSwitch.transition.targetMode)),
+	);
+	const hasInterfaceNotice = interfaceTransitionHasUnacknowledgedNotice(interfaceSwitch.transition) &&
+		!(interfaceContext && session?.mode === "tui" &&
+			interfaceSwitch.transition?.errorCode === "SOURCE_DRAIN_FAILED" &&
+			interfaceSwitch.transition.targetMode === "chat");
 	const historyRecoveryNotice = hasInterfaceNotice && interfaceTransitionOffersHistoryRecovery(interfaceSwitch.transition);
 	const restartRequiredNotice = interfaceTransitionNeedsRestart(interfaceSwitch.transition);
 	const chatLeaveLocked = Boolean(
@@ -1224,10 +1519,10 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	);
 	const chatControllerTransitioning = Boolean(
 		session?.mode === "chat" &&
-			(chatLeaveLocked ||
-				interfaceSwitch.starting ||
+			((chatLeaveLocked && !cloudDrainWaiting) ||
+				(interfaceSwitch.starting && !cloudDrainWaiting) ||
 				(interfaceSwitch.transition?.targetMode === "tui" &&
-					(activeInterfaceTransition || interfaceSwitch.transition.phase === "completed")) ||
+					((activeInterfaceTransition && !cloudDrainWaiting) || interfaceSwitch.transition.phase === "completed")) ||
 				(interfaceSwitch.transition?.targetMode === "chat" &&
 					(activeInterfaceTransition || interfaceSwitch.settling))),
 	);
@@ -1275,6 +1570,9 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			session.activity?.state === "blocked"),
 	);
 	const chatToTerminal = session?.mode === "chat" && interfaceTarget === "tui";
+	const cloudTerminalToChat = Boolean(
+		interfaceContext && session?.mode === "tui" && interfaceTarget === "chat",
+	);
 	const beginInterfaceSwitch = useCallback(
 		async (
 			policy: "drain" | "interrupt",
@@ -1343,13 +1641,34 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	);
 	const requestInterfaceSwitch = useCallback(() => {
 		interfaceSwitch.resetStartError();
+		if (cloudTerminalToChat && !interfaceBusy && session?.cloud) {
+			// The Cloud session list polls, while terminal input is delivered on a
+			// separate stream. Check the current row before an implicit stop so a
+			// newly submitted TUI prompt cannot bypass the policy dialog.
+			void cloudCpClient.getSession(session.cloud.orgId, session.id).then(({ session: latest }) => {
+				if (currentSessionIdRef.current !== session.id) return;
+				if (["active", "waiting_input", "blocked"].includes(latest.activityState) ||
+					latest.status === "working" || latest.status === "needs_input") {
+					setInterfaceSwitchDialogScope({
+						sessionId: session.id, targetMode: interfaceTarget, sourceBusy: true,
+						sourceWaitingForInput: latest.activityState === "waiting_input" || latest.activityState === "blocked" || latest.status === "needs_input",
+					});
+					return;
+				}
+				void beginInterfaceSwitch("interrupt", interfaceTarget);
+			}).catch(() => {
+				if (currentSessionIdRef.current !== session.id) return;
+				setInterfaceSwitchDialogScope({ sessionId: session.id, targetMode: interfaceTarget });
+			});
+			return;
+		}
 		if (!interfaceBusy) {
-			void beginInterfaceSwitch("drain", interfaceTarget);
+			void beginInterfaceSwitch(cloudTerminalToChat ? "interrupt" : "drain", interfaceTarget);
 			return;
 		}
 		if (!session) return;
 		setInterfaceSwitchDialogScope({ sessionId: session.id, targetMode: interfaceTarget });
-	}, [beginInterfaceSwitch, interfaceBusy, interfaceSwitch, interfaceTarget, session]);
+	}, [beginInterfaceSwitch, cloudCpClient, cloudTerminalToChat, interfaceBusy, interfaceSwitch, interfaceTarget, session]);
 	const chooseInterfaceSwitchPolicy = useCallback(
 		(policy: "drain" | "interrupt") => {
 			if (
@@ -1375,20 +1694,30 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			const failed = interfaceSwitch.transition;
 			if (!session || !failed || failed.sessionId !== session.id || failed.targetMode !== interfaceTarget) return;
 			interfaceSwitch.resetStartError();
-			// A failed attempt's interrupt policy is stale consent. Re-evaluate the
-			// current Terminal state and either choose the safe drain default or ask
-			// again before cancelling newly started work.
 			if (!interfaceBusy) {
-				void beginInterfaceSwitch("drain", failed.targetMode, undefined, historyPolicy);
+				void beginInterfaceSwitch(cloudTerminalToChat ? "interrupt" : "drain", failed.targetMode, undefined, historyPolicy);
 				return;
 			}
 			setInterfaceSwitchDialogScope({ sessionId: session.id, targetMode: failed.targetMode, historyPolicy });
 		},
-		[beginInterfaceSwitch, interfaceBusy, interfaceSwitch, interfaceTarget, session],
+		[beginInterfaceSwitch, cloudTerminalToChat, interfaceBusy, interfaceSwitch, interfaceTarget, session],
 	);
 	// Adapters without a Chat driver cannot offer a switch into Chat UI; hide
-	// the button entirely rather than showing a permanently disabled control.
-	const interfaceSwitchUnsupported = interfaceSwitch.status?.reasonCode === "CHAT_UNSUPPORTED";
+	// the switch entirely rather than showing a permanently disabled control.
+	// The daemon's Chat harness list knows this before the session's status
+	// loads, and for terminated sessions, whose status only reports
+	// SESSION_TERMINATED. An empty list (settings still loading, or Chat off
+	// entirely) proves nothing, so the status decides then.
+	const { settings } = useSettings();
+	const chatHarnesses = settings?.chatHarnesses ?? [];
+	const isCloudSession = Boolean(interfaceContext);
+	const interfaceSwitchUnsupported =
+		interfaceSwitch.status?.reasonCode === "CHAT_UNSUPPORTED" ||
+		(!isCloudSession &&
+			interfaceTarget === "chat" &&
+			session !== undefined &&
+			chatHarnesses.length > 0 &&
+			!chatHarnesses.includes(session.provider));
 	// Harnesses without a TUI/Chat handoff cannot convert a running terminal
 	// session. Say so plainly instead of showing the daemon's reason.
 	const interfaceSwitchBlockedReason =
@@ -1399,7 +1728,11 @@ export function SessionView({ sessionId }: SessionViewProps) {
 				})
 			: undefined;
 	const showInterfaceSwitchAction = Boolean(
-		!interfaceSwitchUnsupported && (interfaceSwitch.status || interfaceSwitch.isLoading || interfaceSwitch.statusError),
+		!interfaceSwitchUnsupported && (
+			isCloudSession
+				? cloudEnabled && sessionId
+				: interfaceSwitch.status || interfaceSwitch.isLoading || interfaceSwitch.statusError
+		),
 	);
 	const newTerminalError = openShellTerminal.error ? apiErrorMessage(openShellTerminal.error) : undefined;
 	const newShellTerminalAction = useMemo(() =>
@@ -1420,9 +1753,14 @@ export function SessionView({ sessionId }: SessionViewProps) {
 				</TooltipContent>
 			</Tooltip>
 		) : null,
-		[addShellTerminal, isOrchestrator, newTerminalError, session, t],
+		[addShellTerminal, isOrchestrator, newTerminalError, newTerminalShortcutLabel, session, t],
 	);
-	const fileAnnotation = useFileAnnotation(sessionId);
+	const sendCloudFileAnnotation = useCallback(async (message: string) => {
+		const orgId = session?.cloud?.orgId;
+		if (!orgId) throw new Error(t("files.feedbackError"));
+		await cloudCpClient.sendSessionMessage(orgId, sessionId, { text: message });
+	}, [cloudCpClient, session?.cloud?.orgId, sessionId, t]);
+	const fileAnnotation = useFileAnnotation(sessionId, { sendMessage: session?.cloud ? sendCloudFileAnnotation : undefined });
 	const centerFileTabs = useMemo(
 		() =>
 			fileTabs.openPaths.map((path) => ({
@@ -1491,6 +1829,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 
 	useLayoutEffect(() => {
 		setTerminalTarget({ kind: "worker" });
+		setReviewerChatId(null);
 		setBrowserPopOutState({ sessionId, phase: "docked" });
 		setFilesPoppedOut(false);
 	}, [sessionId]);
@@ -1530,11 +1869,12 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	useEffect(() => {
 		if (handoffSwitchError) setHandoffDialogOpen(true);
 	}, [handoffSwitchError]);
+	// Keep the source interface visible while Cloud waits for work to finish.
 	const interfaceSwitchInlineStatus = useMemo(() =>
-		session && showInterfaceSwitchAction && activeInterfaceTransition ? (
+		showInterfaceSwitchAction && session && (cloudDrainWaiting || (!isCloudSession && activeInterfaceTransition)) ? (
 			<SessionInterfaceSwitchButton
 				target={interfaceTarget}
-				supported={Boolean(interfaceSwitch.status?.supported) && !activeInterfaceTransition}
+				supported
 				disabledReason={
 					interfaceSwitch.isLoading
 						? "Checking whether this agent can switch interfaces…"
@@ -1552,6 +1892,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 		) : null,
 		[
 			activeInterfaceTransition,
+			cloudDrainWaiting,
 			interfaceSwitch.cancelError,
 			interfaceSwitch.cancelling,
 			interfaceSwitch.isLoading,
@@ -1561,6 +1902,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			interfaceSwitch.transition,
 			interfaceSwitchBlockedReason,
 			interfaceTarget,
+			isCloudSession,
 			requestInterfaceSwitch,
 			session,
 			showInterfaceSwitchAction,
@@ -1570,7 +1912,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 		session && showInterfaceSwitchAction && !activeInterfaceTransition ? (
 			<SessionInterfaceSwitchMenuItem
 				target={interfaceTarget}
-				supported={Boolean(interfaceSwitch.status?.supported) && !chatLeaveLocked}
+				supported={(isCloudSession ? Boolean(interfaceSwitch.status?.supported) : Boolean(interfaceSwitch.status?.supported) && !chatLeaveLocked)}
 				disabledReason={
 					interfaceSwitch.isLoading
 						? "Checking whether this agent can switch interfaces…"
@@ -1588,12 +1930,13 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			interfaceSwitch.statusError,
 			interfaceSwitchBlockedReason,
 			interfaceTarget,
+			isCloudSession,
 			requestInterfaceSwitch,
 			session,
 			showInterfaceSwitchAction,
 		],
 	);
-	const handoffMenuItem = useMemo(() => session ? (
+	const handoffMenuItem = useMemo(() => session && !session.cloud ? (
 		<TerminalSwitchAgentButton
 			key={session.id}
 			variant="menu-item"
@@ -1605,12 +1948,24 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			switchError={handoffSwitchError}
 		/>
 	) : null, [handoffAgentSwitch, handoffControlPresentation, handoffDialogOpen, handoffSwitchError, handleHandoffDialogOpenChange, session]);
-	const sessionTabActions = useMemo(() => (
+	// Cloud sessions expose only the interface switch here; agent handoff is a
+	// local daemon feature. Hide the empty actions menu for harnesses without
+	// Chat, including when local settings identify one before transition status
+	// becomes available.
+	const sessionTabActions = useMemo(() => interfaceSwitchUnsupported ? null : (
 		<SessionActionsMenu inlineStatus={interfaceSwitchInlineStatus}>
 			{interfaceSwitchMenuItem}
 			{handoffMenuItem}
 		</SessionActionsMenu>
-	), [handoffMenuItem, interfaceSwitchInlineStatus, interfaceSwitchMenuItem]);
+	), [handoffMenuItem, interfaceSwitchInlineStatus, interfaceSwitchMenuItem, interfaceSwitchUnsupported]);
+	const sessionHeaderActions = (
+		<div
+			className="session-topbar-session-chrome flex shrink-0 items-center"
+			data-compact-session-chrome="false"
+		>
+			<ShellTopbar embedded />
+		</div>
+	);
 	// Spinner replaces the ⋮ at the same size, so the tab title does not need a
 	// wider action slot while switching.
 	const sessionTabActionWide = false;
@@ -1624,9 +1979,9 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	// Publish which one is showing: the notification runtime lives outside this
 	// subtree and must not treat "on the session route" as "watching the agent".
 	useEffect(() => {
-		setVisibleTerminalKind(sessionId, routedTerminalTarget.kind);
+		setVisibleTerminalKind(sessionId, reviewerChatId ? "reviewer" : routedTerminalTarget.kind);
 		return () => clearVisibleTerminalKind(sessionId);
-	}, [clearVisibleTerminalKind, routedTerminalTarget.kind, sessionId, setVisibleTerminalKind]);
+	}, [clearVisibleTerminalKind, reviewerChatId, routedTerminalTarget.kind, sessionId, setVisibleTerminalKind]);
 
 	const prepareFilesInspector = useCallback(() => {
 		if (browserOnly) return;
@@ -1861,7 +2216,16 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			inspectorMotionReadyRef.current = false;
 		};
 	}, [hasInspector]);
-	if (!session && !workspaceQuery.isLoading) {
+	// A Cloud tab may arrive before the paginated workspace cache contains its
+	// row. Keep the session surface (and its switch control) mounted while the
+	// direct control-plane lookup is in flight; only show "not found" after
+	// both sources have settled.
+	const cloudSessionResolving = Boolean(
+		cloudOrgId &&
+		(isCloudRoute || !listedSession) &&
+		cloudRouteSession.isLoading,
+	);
+	if (!session && !workspaceQuery.isLoading && !cloudSessionResolving) {
 		return (
 			<div className="grid h-full place-items-center p-6 text-center font-mono text-xs text-passive">
 				{t("session.notFound")}
@@ -1899,8 +2263,8 @@ export function SessionView({ sessionId }: SessionViewProps) {
 							data-testid="session-topbar-host"
 						/>
 						<div className="relative min-h-0 flex-1" ref={bindHandoffDialogContainer}>
-							{cloudStage ? <CloudLifecycleStatus stage={cloudStage} /> : null}
-							{session && handoffDialogContainer ? (
+							{cloudStage === "paused_by_coder" ? <CloudPausedStatus /> : null}
+							{session && !session.cloud && handoffDialogContainer ? (
 								<SwitchAgentDialog
 									agentSwitch={handoffAgentSwitch}
 									container={handoffDialogContainer}
@@ -1915,12 +2279,25 @@ export function SessionView({ sessionId }: SessionViewProps) {
 								className={cn("h-full min-h-0", fileTabs.activePath && "invisible pointer-events-none")}
 								inert={fileTabs.activePath ? true : undefined}
 							>
-							{showChatSurface ? (
+							{showChatSurface && session?.cloud ? (
+								<CloudSessionChatSurface
+									controllerTransitioning={chatControllerTransitioning}
+									headerActions={sessionHeaderActions}
+									newWorkDisabled={chatNewWorkDisabled}
+									onConversationWorkChange={handleConversationWorkChange}
+									session={session}
+									sessionTabAction={sessionTabActions}
+								/>
+							) : showChatSurface ? (
+								<>
 								<SessionChatSurface
 									key={session.id}
 									session={session}
 									reviewerTerminal={reviewerTerminal}
+									reviewerChat={reviewerChat}
+									reviewerChatSelected={Boolean(reviewerChatId)}
 									onOpenReviewerTerminal={selectReviewerTerminal}
+									onOpenReviewerChat={(target) => selectReviewerChat(target.reviewId)}
 									onSessionRenamed={refreshWorkspaces}
 									reviewerTarget={
 										routedTerminalTarget.kind === "reviewer" ? routedTerminalTarget : undefined
@@ -1957,18 +2334,29 @@ export function SessionView({ sessionId }: SessionViewProps) {
 									onOpenFile={handleOpenFile}
 									onOpenLinkInBrowser={browserView.openLink}
 								/>
+								{reviewerChatId ? (
+									<div className="absolute inset-0">
+										<ReviewerChatSurface hideHeader reviewId={reviewerChatId} />
+									</div>
+								) : null}
+								</>
 							) : (
 								<CenterPane
 									agentInputDisabled={
-										(interfaceSwitch.starting || activeInterfaceTransition) && session?.mode === "tui"
+										(interfaceSwitch.starting || activeInterfaceTransition) && !cloudDrainWaiting && session?.mode === "tui"
 									}
 									daemonReady={daemonStatus.state === "ready"}
 									onCloseShellTerminal={closeShellTerminalByHandle}
 									onRenameShellTerminal={renameShellTerminalByHandle}
 									onSelectSessionTerminal={selectSessionTerminal}
+									onSessionTerminalAttached={onSessionTerminalAttached}
 									onSelectReviewerTerminal={selectReviewerTerminal}
+									onSelectReviewerChat={(target) => selectReviewerChat(target.reviewId)}
 									onSelectShellTerminal={selectShellTerminal}
 									reviewerTerminal={reviewerTerminal}
+									reviewerChat={reviewerChat}
+									reviewerChatSelected={Boolean(reviewerChatId)}
+									reviewerChatContent={reviewerChatId ? <ReviewerChatSurface hideHeader reviewId={reviewerChatId} /> : undefined}
 									session={session}
 									shellTerminals={shellTerminals}
 									terminalTarget={routedTerminalTarget}
@@ -1988,19 +2376,34 @@ export function SessionView({ sessionId }: SessionViewProps) {
 							</div>
 							{fileTabs.activePath ? (
 								<div className="absolute inset-0">
-									<SessionFileWorkspace
-										annotation={fileAnnotation}
-										commitSha={activeCenterFileRequest?.commitSha}
-										initialEditing={activeCenterFileInitialEditing}
-										initialMode={activeCenterFileRequest?.mode ?? "file"}
-										initialRequestKey={activeCenterFileRequest?.key ?? 0}
-										onDirtyChange={setCenterFileDirty}
-										onInitialEditingConsumed={markCenterFileEditingConsumed}
-										path={fileTabs.activePath}
-										sessionId={sessionId}
-										split={filesSplit}
-										scope={activeCenterFileRequest?.scope}
-									/>
+					{session?.cloud ? (
+						<CloudFileContentPane
+							annotation={fileAnnotation}
+							commitSha={activeCenterFileRequest?.commitSha}
+							initialEditing={activeCenterFileInitialEditing}
+							initialMode={activeCenterFileRequest?.mode ?? "file"}
+							initialRequestKey={activeCenterFileRequest?.key ?? 0}
+							onDirtyChange={setCenterFileDirty}
+							path={fileTabs.activePath}
+							scope={activeCenterFileRequest?.scope}
+							session={session}
+							split={filesSplit}
+						/>
+									) : (
+										<SessionFileWorkspace
+											annotation={fileAnnotation}
+											commitSha={activeCenterFileRequest?.commitSha}
+											initialEditing={activeCenterFileInitialEditing}
+											initialMode={activeCenterFileRequest?.mode ?? "file"}
+											initialRequestKey={activeCenterFileRequest?.key ?? 0}
+											onDirtyChange={setCenterFileDirty}
+											onInitialEditingConsumed={markCenterFileEditingConsumed}
+											path={fileTabs.activePath}
+											sessionId={sessionId}
+											split={filesSplit}
+											scope={activeCenterFileRequest?.scope}
+										/>
+									)}
 								</div>
 							) : null}
 							{interfaceSwitch.startError && !interfaceSwitchDialogOpen && !historyRecoveryNotice && !restartRequiredNotice ? (
@@ -2059,20 +2462,26 @@ export function SessionView({ sessionId }: SessionViewProps) {
 							browserPoppedOut={browserPoppedOut}
 							filesView={
 								inspectorView === "files" && session ? (
-									<SessionFileExplorer
+									session.cloud ? (
+										<CloudWorkspaceDiff annotation={fileAnnotation} onOpenFile={openCenterFile} onSplitChange={setFilesSplit} onToggleMaximized={handleToggleFilesPopOut} session={session} split={filesSplit} />
+									) : (
+										<SessionFileExplorer
 										onOpenFile={openCenterFile}
 										onSplitChange={setFilesSplit}
 										onToggleMaximized={handleToggleFilesPopOut}
 										revealRequest={filePreviewRequestsBySession[sessionId] ?? null}
 										sessionId={session.id}
 										split={filesSplit}
-									/>
+										/>
+									)
 								) : null
 							}
 							isInspectorVisible={inspectorPanelVisible}
 							onOpenFiles={browserOnly ? undefined : handleOpenFiles}
 							onOpenReviewFile={handleOpenReviewFile}
-							onOpenReviewerTerminal={selectReviewerTerminal}
+								onOpenReviewerTerminal={selectReviewerTerminal}
+								onOpenReviewerChat={selectReviewerChat}
+								onWorkerMessageSent={showChatSurface || reviewerChatId ? selectSessionTerminal : undefined}
 							onToggleBrowserPopOut={handleToggleBrowserPopOut}
 							onViewChange={transitionInspectorView}
 							view={inspectorView}
@@ -2123,10 +2532,25 @@ export function SessionView({ sessionId }: SessionViewProps) {
 					<NotificationCenter style={noDragStyle} />
 				</div>
 			) : null}
+			{showInterfaceSwitchLoader
+				? <CloudInterfaceSwitchLoader target={interfaceSwitch.transition?.targetMode ?? interfaceTarget} />
+				: showLifecycleLoader || showCompletedLoader
+					? <CloudSessionLifecycleLoader
+						key={`${sessionId}:${cloudReconnecting && !workspaceRestarting ? "terminal" : "startup"}`}
+						sessionId={sessionId}
+						orgId={session?.cloud?.orgId ?? ""}
+						createdAt={session?.cloud?.observedState === "requested" ? session.createdAt : undefined}
+						observedState={session?.cloud?.observedState}
+						workerConnected={Boolean(session?.runtimeConnected)}
+						terminalOnly={cloudReconnecting && !workspaceRestarting}
+						completed={showCompletedLoader}
+					/>
+					: null}
 			<SessionInterfaceSwitchDialog
 				open={interfaceSwitchDialogOpen}
 				target={interfaceSwitchDialogScope?.targetMode ?? interfaceTarget}
-				waitingForInput={interfaceWaitingForInput}
+				requireExplicitTerminalStop={cloudTerminalToChat && !(interfaceBusy || interfaceSwitchDialogScope?.sourceBusy)}
+				waitingForInput={interfaceWaitingForInput || interfaceSwitchDialogScope?.sourceWaitingForInput}
 				busy={interfaceSwitch.starting}
 				error={interfaceSwitch.startError}
 				onOpenChange={(open) => {
@@ -2149,6 +2573,10 @@ export function SessionView({ sessionId }: SessionViewProps) {
 					if (!open) settleUnsafeDraftLeave(false);
 				}}
 			/>
+			{/* Maximized files wear the maximized browser's chrome: a backdrop, the
+          filter pinned in the titlebar band where the browser's address bar
+          sits, and an inset frame for the explorer. The explorer mounts once
+          the band exists so the filter never renders inline first. */}
 			{filesPoppedOut && session
 				? createPortal(
 						<div
@@ -2157,13 +2585,32 @@ export function SessionView({ sessionId }: SessionViewProps) {
 								shellTopbarHiddenByPlatform && !isNativeFullScreen && "files-popout-overlay--mac-windowed",
 							)}
 						>
-							<SessionFileExplorer
-								isMaximized
-								onSplitChange={setFilesSplit}
-								onToggleMaximized={handleToggleFilesPopOut}
-								sessionId={session.id}
-								split={filesSplit}
+							<div aria-hidden="true" className="files-popout-backdrop" />
+							<div
+								className={cn(
+									"files-popout-titlebar",
+									shellTopbarHiddenByPlatform && !isNativeFullScreen && "files-popout-titlebar--mac-windowed",
+								)}
+								data-testid="files-popout-topbar"
+								ref={setFilesPopoutTopbarHost}
 							/>
+							<div className="files-popout-frame">
+								{filesPopoutTopbarHost ? (
+									<FilesTopbarHostContext.Provider value={filesPopoutTopbarHost}>
+										{session.cloud ? (
+											<CloudWorkspaceDiff annotation={fileAnnotation} isMaximized onOpenFile={openCenterFile} onSplitChange={setFilesSplit} onToggleMaximized={handleToggleFilesPopOut} session={session} split={filesSplit} />
+										) : (
+											<SessionFileExplorer
+												isMaximized
+												onSplitChange={setFilesSplit}
+												onToggleMaximized={handleToggleFilesPopOut}
+												sessionId={session.id}
+												split={filesSplit}
+											/>
+										)}
+									</FilesTopbarHostContext.Provider>
+								) : null}
+							</div>
 						</div>,
 						document.body,
 					)
