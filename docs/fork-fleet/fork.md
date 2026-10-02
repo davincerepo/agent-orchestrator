@@ -13,6 +13,7 @@
 | `fleet/feat/prompt-refresh` | 会话提示词重载：复制 provider 会话替换 standing prompt（codex/claude-code Chat） | [prompt-refresh.md](prompt-refresh.md) |
 | `fleet/feat/portable` | 免安装、数据与进程隔离、AO Fleet 品牌 | [fleet-portable.md](fleet-portable.md) |
 | `codex/fix-chat-history-edit` | 临时修复连续编辑历史消息导致控制器停止 | [chat-history-edit.md](chat-history-edit.md) |
+| `codex/fix-acp-overflow` | 原样引入上游 PR #6027：ACP 通知背压与启动时存活 host 恢复 | [acp-overflow.md](acp-overflow.md) |
 
 `fleet/feat/session-import` 仅保留历史参考，不参与集成。
 
