@@ -2,3 +2,26 @@
 backend/internal/httpd/apispec/openapi.yaml text eol=lf
 frontend/src/api/schema.ts text eol=lf
 frontend/src/renderer/routeTree.gen.ts text eol=lf
+
+# Keep source and maintenance files on LF on every platform.
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+*.work text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.py text eol=lf
+.gitattributes text eol=lf
+.editorconfig text eol=lf
