@@ -24,7 +24,7 @@ func TestFleetModelParameterPrecedenceAndResumeSnapshot(t *testing.T) {
 	if resolved.Effort != "ultra" || resolved.ServiceTier != "priority" {
 		t.Fatalf("override = %+v", resolved)
 	}
-	record := domain.SessionRecord{Harness: domain.HarnessCodex, Kind: domain.KindWorker, Metadata: domain.SessionMetadata{ReasoningEffort: "medium", ServiceTier: "default"}}
+	record := domain.SessionRecord{Harness: domain.HarnessCodex, Kind: domain.KindWorker, Metadata: domain.SessionMetadata{Effort: "medium", ServiceTier: "default"}}
 	restored := restoredAgentConfig(record, project)
 	if restored.Effort != "medium" || restored.ServiceTier != "default" {
 		t.Fatalf("resume used new project defaults: %+v", restored)
@@ -35,7 +35,7 @@ func TestFleetModelParameterPrecedenceAndResumeSnapshot(t *testing.T) {
 		t.Fatalf("legacy session must retain native settings: %+v", restored)
 	}
 	other := normalizeAgentConfigForHarness(domain.HarnessClaudeCode, worker)
-	if other.Effort != "" || other.ServiceTier != "" {
-		t.Fatalf("leaked Codex options: %+v", other)
+	if other.Effort != worker.Effort || other.ServiceTier != "" {
+		t.Fatalf("Claude must retain upstream effort without Codex Fast: %+v", other)
 	}
 }

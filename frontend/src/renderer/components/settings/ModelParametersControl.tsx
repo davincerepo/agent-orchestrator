@@ -13,9 +13,10 @@ export function findParameterModel<T extends ModelParameterCapabilities & { id: 
  return model ? models?.find((item) => item.id === model) : models?.find((item) => item.isDefault);
 }
 export function resolveServiceTier(model: ModelParameterCapabilities | undefined, value?: string): ServiceTier {
- return supportsFast(model) && (value ?? model?.defaultServiceTier) === "priority" ? "priority" : "default";
+ return supportsFast(model) && (value || model?.defaultServiceTier) === "priority" ? "priority" : "default";
 }
-export function ServiceTierControl({ model, value, onChange, disabled = false }: {
+export function ServiceTierControl({ model, value, onChange, disabled = false, ariaLabel = "Fast" }: {
+ ariaLabel?: string;
  model?: ModelParameterCapabilities;
  value?: string;
  onChange: (value: ServiceTier) => void;
@@ -23,7 +24,7 @@ export function ServiceTierControl({ model, value, onChange, disabled = false }:
 }) {
  if (!supportsFast(model)) return null;
  return <SettingsOptionMenu<ServiceTier>
-  aria-label="Fast" value={resolveServiceTier(model, value)}
+  aria-label={ariaLabel} value={resolveServiceTier(model, value)}
   options={[{ value: "default", label: "Fast off" }, { value: "priority", label: "Fast on" }]}
   onChange={onChange} disabled={disabled}
  />;

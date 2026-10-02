@@ -457,14 +457,14 @@ func (q *Queries) SetInterfaceConversationModelParameters(ctx context.Context, a
 }
 
 const setInterfaceSessionModelParameters = `-- name: SetInterfaceSessionModelParameters :exec
-UPDATE sessions SET model = ?, reasoning_effort = ?, service_tier = ? WHERE id = ?
+UPDATE sessions SET model = ?, effort = ?, service_tier = ? WHERE id = ?
 `
 
 type SetInterfaceSessionModelParametersParams struct {
-	Model           string
-	ReasoningEffort string
-	ServiceTier     string
-	ID              domain.SessionID
+	Model       string
+	Effort      string
+	ServiceTier string
+	ID          domain.SessionID
 }
 
 // Model parameters move with the controller epoch in the same transaction.
@@ -472,7 +472,7 @@ type SetInterfaceSessionModelParametersParams struct {
 func (q *Queries) SetInterfaceSessionModelParameters(ctx context.Context, arg SetInterfaceSessionModelParametersParams) error {
 	_, err := q.db.ExecContext(ctx, setInterfaceSessionModelParameters,
 		arg.Model,
-		arg.ReasoningEffort,
+		arg.Effort,
 		arg.ServiceTier,
 		arg.ID,
 	)

@@ -320,7 +320,7 @@ func (s *Store) commitSessionControllerEpoch(
 			return false, err
 		}
 		if err := q.SetInterfaceSessionModelParameters(ctx, gen.SetInterfaceSessionModelParametersParams{
-			ID: id, Model: config.Model, ReasoningEffort: config.Effort, ServiceTier: config.ServiceTier,
+			ID: id, Model: config.Model, Effort: config.Effort, ServiceTier: config.ServiceTier,
 		}); err != nil {
 			return false, fmt.Errorf("save interface model parameters: %w", err)
 		}

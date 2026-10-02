@@ -19,17 +19,23 @@ const (
 
 // ChatControllerStart is the resolved launch contract shared by the coordinator and Chat service.
 type ChatControllerStart struct {
-	SessionID             domain.SessionID
-	ProjectID             domain.ProjectID
-	Kind                  domain.SessionKind
-	Harness               domain.AgentHarness
-	DataDir               string
-	WorkspacePath         string
-	Env                   map[string]string
-	Model                 string
-	Effort                string
+	SessionID domain.SessionID
+	// Owner distinguishes worker and review conversations that share a worker
+	// session. Empty preserves the existing worker-session owner.
+	Owner         domain.ConversationOwner
+	ProjectID     domain.ProjectID
+	Kind          domain.SessionKind
+	Harness       domain.AgentHarness
+	DataDir       string
+	WorkspacePath string
+	Env           map[string]string
+	Model         string
+	Effort        string
+	Permissions   PermissionMode
+	// ReadOnly forces the provider's native sandbox to reject workspace writes.
+	// Reviewer-owned conversations set this independently of approval behavior.
+	ReadOnly              bool
 	ServiceTier           string
-	Permissions           PermissionMode
 	SystemPrompt          string
 	AdditionalDirectories []string
 	MCPServers            []ChatMCPServerConfig
