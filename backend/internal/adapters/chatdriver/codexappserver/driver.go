@@ -303,12 +303,16 @@ func (d *Driver) Start(ctx context.Context, cfg ports.ChatStartConfig) (ports.Ch
 		return nil, errors.New("persistent chat host already owns a provider conversation for a fresh session")
 	}
 
-	policy, sandbox := approvalSettings(cfg.Permissions)
+	policy, sandbox, reviewer := launchApprovalSettings(cfg.Permissions, cfg.ReadOnly)
+	conv.readOnly = cfg.ReadOnly
 	params := map[string]any{
 		"cwd":               cfg.WorkspacePath,
 		"approvalPolicy":    policy,
-		"approvalsReviewer": approvalReviewer(cfg.Permissions),
+		"approvalsReviewer": reviewer,
 		"sandbox":           sandbox,
+	}
+	if cfg.Ephemeral {
+		params["ephemeral"] = true
 	}
 	if cfg.Model != "" {
 		params["model"] = cfg.Model
@@ -372,6 +376,7 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		// The host preserved the already-initialized app-server connection and its
 		// loaded thread. Host replay bridges output and unresolved server requests
 		// across the daemon detach without waiting for the active turn to settle.
+		conv.readOnly = cfg.ReadOnly
 		conv.start(cfg.ProviderConversationID, cfg.Model, cfg.Effort, threadLaunchContext{
 			workdir:     cfg.WorkspacePath,
 			permissions: cfg.Permissions,
@@ -380,12 +385,13 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		return conv, nil
 	}
 
-	policy, sandbox := approvalSettings(cfg.Permissions)
+	policy, sandbox, reviewer := launchApprovalSettings(cfg.Permissions, cfg.ReadOnly)
+	conv.readOnly = cfg.ReadOnly
 	params := map[string]any{
 		"threadId":          cfg.ProviderConversationID,
 		"cwd":               cfg.WorkspacePath,
 		"approvalPolicy":    policy,
-		"approvalsReviewer": approvalReviewer(cfg.Permissions),
+		"approvalsReviewer": reviewer,
 		"sandbox":           sandbox,
 	}
 	if cfg.Model != "" {
@@ -567,6 +573,14 @@ func approvalReviewer(mode ports.PermissionMode) string {
 		return "auto_review"
 	}
 	return "user"
+}
+
+func launchApprovalSettings(mode ports.PermissionMode, readOnly bool) (policy, sandbox, reviewer string) {
+	if readOnly {
+		return "never", "read-only", "user"
+	}
+	policy, sandbox = approvalSettings(mode)
+	return policy, sandbox, approvalReviewer(mode)
 }
 
 // spawnAppServer is the real launcher.
