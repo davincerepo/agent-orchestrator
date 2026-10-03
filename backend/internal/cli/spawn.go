@@ -17,7 +17,7 @@ import (
 
 // maxDisplayNameLen caps the sidebar label set by `--name`. Mirrored by the
 // daemon's spawn handler so a direct API call is held to the same limit.
-const maxDisplayNameLen = 20
+const maxDisplayNameLen = 100
 
 type spawnOptions struct {
 	project         string
@@ -123,7 +123,7 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 			}
 			var project projectDetails
 			if !opts.standalone {
-				project, err = ctx.resolveSpawnProject(cmd.Context(), opts.project, caller, ownProject)
+				project, err = ctx.resolveDispatchProject(cmd.Context(), opts.project, caller, ownProject)
 				if err != nil {
 					return err
 				}
@@ -183,8 +183,8 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 				return fmt.Errorf("daemon returned empty session id for spawn")
 			}
 			claimed := ""
+			var claim claimPRResponse
 			if opts.claimPR != "" {
-				var claim claimPRResponse
 				if err := ctx.postJSON(cmd.Context(), "sessions/"+url.PathEscape(res.Session.ID)+"/pr/claim", claimPRRequest{PR: claimRef, AllowTakeover: !opts.noTakeover}, &claim); err != nil {
 					if killErr := ctx.rollbackSpawnedSession(cmd.Context(), res.Session.ID); killErr != nil {
 						return fmt.Errorf("failed to claim PR %s: %w; rollback of session %s failed: %w", opts.claimPR, err, res.Session.ID, killErr)
@@ -208,8 +208,13 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 			if displayName == "" {
 				displayName = name
 			}
-			_, err = fmt.Fprintf(out, "spawned session %s %q (%s)%s%s\n", res.Session.ID, displayName, res.Session.Status, claimLabel, promptSize)
-			return err
+			if _, err := fmt.Fprintf(out, "spawned session %s %q (%s)%s%s\n", res.Session.ID, displayName, res.Session.Status, claimLabel, promptSize); err != nil {
+				return err
+			}
+			if opts.claimPR != "" {
+				return writeClaimPRCheckout(out, claim.BranchChanged)
+			}
+			return nil
 		},
 	}
 	f := cmd.Flags()
@@ -223,7 +228,7 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 	})
 	f.StringVar(&opts.project, "project", "", "Project id to spawn the session in (default: AO_PROJECT_ID or the current registered repo)")
 	f.BoolVar(&opts.standalone, "standalone", false, "Spawn a projectless worker in an AO-managed plain directory (requires --agent)")
-	f.StringVar(&opts.harness, "harness", "", "Agent harness / --agent: claude-code, codex, aider, opencode, grok, droid, amp, agy, crush, cursor, qwen, copilot, goose, auggie, continue, devin, cline, kimi, muse, kiro, kilocode, vibe, pi, kimchi, prime-agent, autohand (default: project worker.agent; orchestrator spawns default to project orchestrator.agent; required if the project has none)")
+	f.StringVar(&opts.harness, "harness", "", "Agent harness / --agent: claude-code, codex, aider, opencode, opencode-v2, grok, droid, amp, agy, crush, cursor, qwen, gemini, copilot, goose, auggie, continue, devin, cline, kimi, muse, kiro, kilocode, vibe, pi, kimchi, prime-agent, autohand, omp, fx, unreal-agent, mimo-code, deepseek-harness (default: project worker.agent; orchestrator spawns default to project orchestrator.agent; required if the project has none)")
 	f.StringVar(&opts.kind, "kind", "", "Session role: worker or orchestrator (default: worker)")
 	f.StringVar(&opts.mode, "mode", "", "Initial session interface: chat (structured agent connection) or tui (the agent's native terminal). Omitted uses the daemon default; compatible sessions can switch later.")
 	f.StringVar(&opts.branch, "branch", "", "Branch for git project sessions (default: ao/<session-id>/root; unsupported for standalone or Scratch sessions)")
@@ -231,8 +236,8 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 	f.StringVar(&opts.model, "model", "", "Agent model override for this session only (e.g. sonnet, gpt-5.6-sol); overrides project/role config without changing it")
 	f.StringVar(&opts.issue, "issue", "", "Issue id to associate with the session")
 	f.StringVar(&opts.trackerProvider, "tracker-provider", "github", "Issue tracker provider: github or gitlab (default: github)")
-	f.StringVar(&opts.name, "name", "", "Display name shown in the sidebar (required, max 20 characters)")
-	f.StringVar(&opts.claimPR, "claim-pr", "", "Immediately claim an existing PR for the spawned session")
+	f.StringVar(&opts.name, "name", "", "Display name shown in the sidebar (required, max 100 characters)")
+	f.StringVar(&opts.claimPR, "claim-pr", "", "Claim PR ownership metadata only for the spawned session; does not check out the PR branch")
 	f.BoolVar(&opts.noTakeover, "no-takeover", false, "Refuse if another active session owns the claimed PR (requires --claim-pr)")
 	f.BoolVar(&opts.skipAgentCheck, "skip-agent-check", false, "Skip CLI readiness warnings (the daemon still validates launch readiness)")
 	return cmd
@@ -253,20 +258,19 @@ func (c *commandContext) fetchAgentInventory(ctx context.Context, refresh bool) 
 	return readinessInventory(readiness), nil
 }
 
-func (c *commandContext) resolveSpawnProject(ctx context.Context, explicit, caller, ownProject string) (projectDetails, error) {
-	if caller != "" {
-		if explicit != "" {
-			if err := checkCallerProject(caller, ownProject, strings.TrimSpace(explicit)); err != nil {
-				return projectDetails{}, err
-			}
-		}
-		return c.fetchProjectDetails(ctx, ownProject)
-	}
+func (c *commandContext) resolveSpawnProject(ctx context.Context, explicit string) (projectDetails, error) {
 	if id := strings.TrimSpace(explicit); id != "" {
 		return c.fetchProjectDetails(ctx, id)
 	}
 	if id := strings.TrimSpace(os.Getenv("AO_PROJECT_ID")); id != "" {
 		return c.fetchProjectDetails(ctx, id)
+	}
+	if sessionID := strings.TrimSpace(os.Getenv("AO_SESSION_ID")); sessionID != "" {
+		project, err := c.resolveProjectFromSession(ctx, sessionID)
+		if err != nil {
+			return projectDetails{}, err
+		}
+		return project, nil
 	}
 	project, ok, err := c.resolveProjectFromCWD(ctx)
 	if err != nil {
@@ -276,6 +280,17 @@ func (c *commandContext) resolveSpawnProject(ctx context.Context, explicit, call
 		return project, nil
 	}
 	return projectDetails{}, usageError{fmt.Errorf("project could not be resolved; pass --project, use --standalone, or run `ao project add --path <repo-path> --worker-agent <agent>`")}
+}
+
+func (c *commandContext) resolveProjectFromSession(ctx context.Context, sessionID string) (projectDetails, error) {
+	sess, err := c.fetchScopedSession(ctx, sessionID, "")
+	if err != nil {
+		return projectDetails{}, usageError{fmt.Errorf("project could not be resolved from AO_SESSION_ID %q; pass --project", sessionID)}
+	}
+	if strings.TrimSpace(sess.ProjectID) == "" {
+		return projectDetails{}, usageError{fmt.Errorf("project could not be resolved from AO_SESSION_ID %q; pass --project", sessionID)}
+	}
+	return c.fetchProjectDetails(ctx, sess.ProjectID)
 }
 
 func (c *commandContext) resolveProjectFromCWD(ctx context.Context) (projectDetails, bool, error) {

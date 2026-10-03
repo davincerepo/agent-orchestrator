@@ -39,6 +39,7 @@ import {
 	type AgentSwitchPresentation,
 } from "../../lib/agent-switch-presentation";
 import { cn } from "../../lib/utils";
+import { useSessionLinkNavigation } from "../../lib/use-session-link-navigation";
 import type { Theme } from "../../stores/ui-store";
 import { can } from "../../types/conversation";
 import type { ConversationSnapshot } from "../../types/conversation";
@@ -89,6 +90,9 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 	session,
 	reviewerTerminal,
 	onOpenReviewerTerminal,
+	reviewerChat,
+	onOpenReviewerChat,
+	reviewerChatSelected,
 	onSessionRenamed,
 	reviewerTarget,
 	onSelectChat,
@@ -123,6 +127,9 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 	session: WorkspaceSession;
 	reviewerTerminal?: { handleId: string; harness: string };
 	onOpenReviewerTerminal?: (target: { handleId: string; harness: string }) => void;
+	reviewerChat?: { reviewId: string; harness: string };
+	onOpenReviewerChat?: (target: { reviewId: string; harness: string }) => void;
+	reviewerChatSelected?: boolean;
 	onSessionRenamed?: () => void | Promise<void>;
 	reviewerTarget?: Extract<TerminalTarget, { kind: "reviewer" }>;
 	onSelectChat?: () => void;
@@ -333,6 +340,7 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 	const { paths, truncated } = useWorkspaceFilePaths(session.id, Boolean(snapshot));
 	const stageAttachments = useStageAttachments(session.id);
 	const openLinkInBrowser = useSessionBrowserLink(session, onOpenLinkInBrowser, paths);
+	const openSessionLink = useSessionLinkNavigation();
 	const conversationLinkBaselines = useRef(new Map<string, ConversationLinkBaseline>());
 	useEffect(() => {
 		if (!snapshot || isLoading) return;
@@ -477,12 +485,16 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 				agentInputDisabled={switchLocksChat || handoffDialogOpen}
 				newWorkDisabled={newWorkDisabled}
 				onLinkOpen={openLinkInBrowser}
+				onSessionLinkOpen={openSessionLink}
 				sessionTitle={session.title}
 				sessionRole={session.kind}
 				session={session}
 				onSessionRenamed={onSessionRenamed}
 				reviewerTerminal={reviewerTerminal}
 				onOpenReviewerTerminal={onOpenReviewerTerminal}
+				reviewerChat={reviewerChat}
+				onOpenReviewerChat={onOpenReviewerChat}
+				reviewerChatSelected={reviewerChatSelected}
 				reviewerTarget={reviewerTarget}
 				onSelectChat={onSelectChat}
 				shellTerminals={shellTerminals}
