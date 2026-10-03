@@ -33,6 +33,7 @@ const {
 	xtermMounts,
 	xtermUnmounts,
 	xtermFocusRequests,
+	visibleContentCallback,
 } = vi.hoisted(
 	() => ({
 		attachMock: vi.fn(() => vi.fn()),
@@ -58,6 +59,7 @@ const {
 		xtermMounts: { value: 0 },
 		xtermUnmounts: { value: 0 },
 		xtermFocusRequests: { value: 0 },
+		visibleContentCallback: { value: undefined as (() => void) | undefined },
 	}),
 );
 let terminalLinkHandler: ((uri: string) => void) | undefined;
@@ -85,6 +87,7 @@ vi.mock("../lib/api-client", () => ({
 		) => getMock(path, options),
 		POST: (...args: unknown[]) => postMock(...args),
 	},
+	hasTrustedApiBaseUrl: () => false,
 	apiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
 
@@ -92,10 +95,12 @@ vi.mock("./XtermTerminal", () => ({
 	XtermTerminal: (props: {
 		focusRequested?: boolean;
 		isVisible?: boolean;
+		onVisibleContent?: () => void;
 		onLinkOpen?: (uri: string) => void;
 		onReady?: (terminal: AttachableTerminal) => void;
 	}) => {
 		terminalLinkHandler = props.onLinkOpen;
+		visibleContentCallback.value = props.onVisibleContent;
 		const instance = useRef(0);
 		if (instance.current === 0) {
 			xtermMounts.value += 1;
@@ -182,6 +187,7 @@ beforeEach(() => {
 	xtermMounts.value = 0;
 	xtermUnmounts.value = 0;
 	xtermFocusRequests.value = 0;
+	visibleContentCallback.value = undefined;
 	useUiStore.setState({ inspectorSessions: {} });
 });
 
@@ -250,6 +256,8 @@ function renderPane(
 	session?: WorkspaceSession,
 	inputRequest?: { id: number; data: string },
 	onInputRequestResult?: (id: number, accepted: boolean) => void,
+	terminalTarget?: TerminalTarget,
+	onTerminalContentReadyChange?: (ready: boolean) => void,
 ) {
 	const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 	const previousAO = window.ao;
@@ -262,7 +270,9 @@ function renderPane(
 					fontSize={12}
 					inputRequest={inputRequest}
 					onInputRequestResult={onInputRequestResult}
+					onTerminalContentReadyChange={onTerminalContentReadyChange}
 					session={session}
+					terminalTarget={terminalTarget}
 					theme="dark"
 				/>
 			</TooltipProvider>
@@ -520,8 +530,40 @@ describe("TerminalPane replay cover", () => {
 		replaySettled.value = false;
 		const view = renderPane({ ...worker, terminalHandleId: "term-1", cloud: { orgId: "org-1" } });
 		try {
-			expect(screen.getByTestId("terminal-replay-cover")).toHaveTextContent("Connecting…");
+			// Before the first attach, a cloud terminal shows the single opaque
+			// connecting cover (not the replay cover), with a bare "Connecting".
+			expect(screen.getByTestId("terminal-connecting-cover")).toHaveTextContent("Connecting");
 			expect(terminalSessionOptions.at(-1)?.waitForInitialOutput).toBe(true);
+		} finally {
+			view.restore();
+		}
+	});
+
+	it("reports the cloud agent ready only after its first replay is painted", async () => {
+		const onContentReady = vi.fn();
+		let finishPaint: (() => void) | undefined;
+		prepareForActivationMock.mockImplementation(() => new Promise<void>((resolve) => { finishPaint = resolve; }));
+		terminalState.value = "attached";
+		hasAttached.value = true;
+		replaySettled.value = false;
+		const session = { ...worker, terminalHandleId: "term-1", cloud: { orgId: "org-1" } };
+		const view = renderPane(session, undefined, undefined, undefined, onContentReady);
+		try {
+			expect(onContentReady).toHaveBeenLastCalledWith(false);
+			replaySettled.value = true;
+			view.rerender(
+				<QueryClientProvider client={view.queryClient}>
+					<TooltipProvider>
+						<TerminalPane daemonReady fontSize={12} onTerminalContentReadyChange={onContentReady} session={session} theme="dark" />
+					</TooltipProvider>
+				</QueryClientProvider>,
+			);
+			expect(onContentReady).toHaveBeenLastCalledWith(false);
+			await act(async () => finishPaint?.());
+			expect(onContentReady).toHaveBeenLastCalledWith(false);
+			expect(screen.getByTestId("terminal-connecting-cover")).toBeInTheDocument();
+			act(() => visibleContentCallback.value?.());
+			await waitFor(() => expect(onContentReady).toHaveBeenLastCalledWith(true));
 		} finally {
 			view.restore();
 		}
@@ -762,6 +804,44 @@ describe("TerminalCacheProvider", () => {
 		}
 	});
 
+	it("adopts a fresh cloud worker's first epoch in place without remounting", async () => {
+		// A fresh cloud worker attaches before its sandbox is up, while the epoch is
+		// still unknown; the moment the worker comes online the polled epoch flips
+		// from undefined to its first value. That must NOT remount the just-attached
+		// pane, which the user would see as connected -> blank -> terminal.
+		const cloud = { orgId: "cloud-org" } as const;
+		const connecting = { ...sessionA, cloud, terminalGeneration: undefined };
+		const online = { ...connecting, terminalGeneration: "5605" };
+		const view = renderCachedPane({ session: connecting, sessions: [connecting] });
+		try {
+			const terminal = await waitFor(() => activeXterm());
+			expect(xtermMounts.value).toBe(1);
+			act(() => {
+				view.queryClient.setQueryData(workspaceQueryKey, workspaceWithSessions([online]));
+			});
+			view.show(online);
+			// The reconcile loop runs on the query update; adoption is synchronous, so
+			// no remount and no second attach should ever occur.
+			expect(activeXterm()).toBe(terminal);
+			expect(xtermMounts.value).toBe(1);
+			expect(xtermUnmounts.value).toBe(0);
+			expect(attachMock).toHaveBeenCalledTimes(1);
+
+			// A genuine later epoch advance (idle-resume) still re-mints, proving the
+			// adopted epoch was recorded rather than ignored.
+			const resumed = { ...online, terminalGeneration: "5606" };
+			act(() => {
+				view.queryClient.setQueryData(workspaceQueryKey, workspaceWithSessions([resumed]));
+			});
+			view.show(resumed);
+			await waitFor(() => expect(activeXterm()).not.toBe(terminal));
+			expect(xtermMounts.value).toBe(2);
+			expect(attachMock).toHaveBeenCalledTimes(2);
+		} finally {
+			view.restore();
+		}
+	});
+
 	it("disposes parked entries when their session is removed", async () => {
 		const view = renderCachedPane({ session: sessionA, sessions: [sessionA, sessionB] });
 		try {
@@ -860,6 +940,17 @@ describe("TerminalCacheProvider", () => {
 });
 
 describe("terminal restore", () => {
+	it("does not show the terminal-ended strip for a Cloud agent", () => {
+		terminalState.value = "exited";
+		const view = renderPane({ ...worker, cloud: { orgId: "org-1" }, terminalHandleId: "term-1" });
+		try {
+			expect(screen.queryByText("This terminal process ended, but the session is not marked terminated yet.")).not.toBeInTheDocument();
+			expect(screen.queryByText("TERMINAL ENDED")).not.toBeInTheDocument();
+		} finally {
+			view.restore();
+		}
+	});
+
 	it.each([
 		["exited", undefined],
 		["error", "terminal handle missing"],
@@ -881,6 +972,97 @@ describe("terminal restore", () => {
 		} finally {
 			view.restore();
 		}
+	});
+
+	// The agent process died but the session row did not. Recovery here is
+	// resume-agent (keeps worktree + native conversation), never restore.
+	describe("agent exited while the session row is alive", () => {
+		const exited = {
+			activity: { state: "exited", lastActivityAt: "2026-06-10T00:00:00Z" },
+			isTerminated: false,
+			terminalHandleId: "term-1",
+		} as const;
+
+		it.each([
+			["worker", worker],
+			["orchestrator", orchestrator],
+		])("posts resume-agent from the strip for a %s", async (_kind, session) => {
+			terminalState.value = "exited";
+			const view = renderPane({ ...session, ...exited });
+			try {
+				await userEvent.click(screen.getByRole("button", { name: "Resume agent" }));
+				await waitFor(() =>
+					expect(postMock).toHaveBeenCalledWith("/api/v1/sessions/{sessionId}/resume-agent", {
+						params: { path: { sessionId: session.id } },
+					}),
+				);
+			} finally {
+				view.restore();
+			}
+		});
+
+		// An agent can exit while its pane survives on a keep-alive, so the mux
+		// never reports "exited". Without sessionAgentExited in showEndedState the
+		// whole strip stays hidden and the only recovery control goes with it.
+		it("shows the strip even when the mux never reported an exit", () => {
+			terminalState.value = "attached";
+			const view = renderPane({ ...orchestrator, ...exited });
+			try {
+				expect(screen.getByRole("button", { name: "Resume agent" })).toBeInTheDocument();
+			} finally {
+				view.restore();
+			}
+		});
+
+		it.each([
+			["shell", { kind: "shell", handleId: "shell-1", generation: "2026-06-10T00:00:00Z", sessionId: worker.id, title: "Terminal 1" }],
+			["reviewer", { kind: "reviewer", handleId: "reviewer-1", harness: "codex", sessionId: worker.id }],
+		] satisfies Array<[string, TerminalTarget]>)(
+			"does not show the ended strip over an attached %s terminal",
+			(_kind, terminalTarget) => {
+				terminalState.value = "attached";
+				const view = renderPane({ ...worker, ...exited }, undefined, undefined, terminalTarget);
+				try {
+					expect(screen.getByTestId("xterm")).toBeInTheDocument();
+					expect(screen.queryByText("Terminal ended")).not.toBeInTheDocument();
+				} finally {
+					view.restore();
+				}
+			},
+		);
+
+		// Cloud sessions recover through the control plane; the local daemon has
+		// never heard of them, so this button must not appear for one.
+		it("does not offer resume for a cloud session", () => {
+			terminalState.value = "exited";
+			const view = renderPane({
+				...worker,
+				...exited,
+				cloud: { orgId: "org-1" },
+			});
+			try {
+				expect(screen.queryByRole("button", { name: "Resume agent" })).not.toBeInTheDocument();
+			} finally {
+				view.restore();
+			}
+		});
+
+		it("offers restore and not resume once the row is terminated", () => {
+			terminalState.value = "exited";
+			const view = renderPane({
+				...worker,
+				activity: { state: "exited", lastActivityAt: "2026-06-10T00:00:00Z" },
+				isTerminated: true,
+				status: "terminated",
+				terminalHandleId: "term-1",
+			});
+			try {
+				expect(screen.getByRole("button", { name: "Restore session" })).toBeInTheDocument();
+				expect(screen.queryByRole("button", { name: "Resume agent" })).not.toBeInTheDocument();
+			} finally {
+				view.restore();
+			}
+		});
 	});
 
 	it("offers restore when a merged session is terminated", () => {
@@ -909,7 +1091,8 @@ describe("terminal restore", () => {
 		try {
 			expect(await screen.findByRole("button", { name: "Restore session" })).toBeInTheDocument();
 			expect(screen.getByTestId("xterm")).toBeInTheDocument();
-			expect(screen.getByText("Terminal error: terminal handle missing")).toBeInTheDocument();
+			expect(screen.getByText("Terminal ended")).toBeInTheDocument();
+			expect(screen.queryByText("Terminal error: terminal handle missing")).not.toBeInTheDocument();
 		} finally {
 			view.restore();
 		}
@@ -917,13 +1100,15 @@ describe("terminal restore", () => {
 });
 
 describe("providerScrollsByKeyboard", () => {
-	// opencode, its fork kilocode, and grok use TUIs that scroll their own transcripts
+	// opencode, its derivatives kilocode and MiMo Code, and grok use TUIs that scroll their own transcripts
 	// by keyboard and ignore SGR wheel reports, so they must opt into the
 	// PageUp/PageDown wheel routing (see XtermTerminal's paneScrollsByKeyboard).
 	it("is true for keyboard-scroll TUIs", () => {
 		expect(providerScrollsByKeyboard("opencode")).toBe(true);
+		expect(providerScrollsByKeyboard("opencode-v2")).toBe(true);
 		expect(providerScrollsByKeyboard("kilocode")).toBe(true);
 		expect(providerScrollsByKeyboard("grok")).toBe(true);
+		expect(providerScrollsByKeyboard("mimo-code")).toBe(true);
 	});
 
 	it("is false for mouse-report/native-scroll providers", () => {

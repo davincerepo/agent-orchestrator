@@ -171,6 +171,7 @@ import {
 import { buildLinuxAppMenuTemplate, buildMacAppMenuTemplate, buildWindowsAppMenuTemplate } from "./main/menu";
 import { ancestorRepositorySetupWarning, resolveCheckedOutBranch, scanImportFolder } from "./main/import-folder-scan";
 import { parseOpenFolderPathArg } from "./main/open-folder-arg";
+import { registerRemotesIpc, remotesFilePath } from "./main/remotes-main";
 import { AGENT_SWITCH_VISIBILITY_IPC_CHANNEL } from "./shared/agent-switch-observability";
 
 // Globals injected at compile time by @electron-forge/plugin-vite.
@@ -807,6 +808,14 @@ async function createWindowInternal(): Promise<void> {
 			});
 			return result.response === 1;
 		},
+		reportSwitchFailure: (message, labels) => {
+			if (!mainWindow || mainWindow.isDestroyed()) return;
+			void dialog.showMessageBox(mainWindow, {
+				type: "error",
+				title: labels.switchTitle,
+				message,
+			}).catch((error) => console.error("browser profile error dialog failed:", error));
+		},
 	});
 	if (daemonStatus.state === "ready") establishBrowserRuntimeLink();
 
@@ -977,6 +986,7 @@ let cachedShellEnv: Record<string, string> | null = null;
 // Memoize the in-flight resolution so concurrent/repeat awaits are cheap.
 let shellEnvPromise: Promise<void> | null = null;
 let terminalShellPreference: TerminalShellPreference = { ...DEFAULT_TERMINAL_SHELL };
+const configuredLoginShell = process.platform === "darwin" ? (os.userInfo().shell ?? undefined) : undefined;
 
 // Telemetry defaults stamped on the daemon env on every platform; explicit env
 // always wins.
@@ -1083,7 +1093,7 @@ function ensureShellEnv(): Promise<void> {
 			});
 			return shellEnvPromise;
 		}
-		shellEnvPromise = resolveShellEnv(process.env, runLoginShell).then((resolved) => {
+		shellEnvPromise = resolveShellEnv(process.env, runLoginShell, configuredLoginShell).then((resolved) => {
 			cachedShellEnv = resolved;
 			if (!resolved) {
 				console.error("AO: could not read the login-shell environment; falling back to a static PATH floor.");
@@ -1182,7 +1192,12 @@ function daemonEnv(forceKeep = keepDaemonAlive(process.env)): NodeJS.ProcessEnv 
 	if (process.platform === "win32") {
 		return { ...process.env, ...(cachedShellEnv ?? {}), ...devExtras, ...telemetryOverrides(), ...ownerTag, ...fleetRuntime?.env };
 	}
-	return buildDaemonEnv(process.env, cachedShellEnv, { ...devExtras, ...telemetryOverrides(), ...ownerTag });
+	return buildDaemonEnv(
+		process.env,
+		cachedShellEnv,
+		{ ...devExtras, ...telemetryOverrides(), ...ownerTag },
+		configuredLoginShell,
+	);
 }
 
 function pathKey(value: string): string {
@@ -2204,6 +2219,13 @@ async function chooseDirectory(title: string, defaultPath?: string): Promise<str
 	if (result.canceled) return null;
 	return result.filePaths[0] ?? null;
 }
+
+registerRemotesIpc(ipcMain, {
+	file: remotesFilePath(),
+	// No host is ever connected yet; the proxy registry that owns live
+	// connections lands in the next change and replaces this.
+	disconnect: async () => undefined,
+});
 
 ipcMain.handle("app:chooseDirectory", async (_event, input?: string | { title?: string; defaultPath?: string }) => {
 	const title = typeof input === "string"
