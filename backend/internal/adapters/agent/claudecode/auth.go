@@ -432,6 +432,7 @@ func ProviderModels(ctx context.Context, binary, workingDir string, env map[stri
 	for _, model := range result.Models {
 		models = append(models, ports.AgentModelInfo{
 			ID: model.ID, Label: model.DisplayName, Efforts: model.Efforts,
+			EffortUnknown: model.EffortUnknown,
 		})
 	}
 	return models, nil

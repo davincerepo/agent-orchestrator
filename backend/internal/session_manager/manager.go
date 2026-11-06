@@ -1434,7 +1434,10 @@ func (m *Manager) resolveAgentConfig(ctx context.Context, cfg ports.SpawnConfig,
 		return ports.AgentConfig{}, fmt.Errorf("%w: model %q is not in the active provider catalog", ErrUnsupportedModel, modelID)
 	}
 	if modelChangedWithoutExplicitEffort {
-		if selected == nil || !containsString(selected.Efforts, base.Effort) {
+		// A gateway catalog that never advertised capabilities leaves the
+		// levels unknown, not empty: keep the configured level and let the
+		// agent, which owns the real model metadata, accept or reject it.
+		if selected == nil || !(selected.EffortUnknown || containsString(selected.Efforts, base.Effort)) {
 			resolved.Effort = ""
 		}
 	}
@@ -1444,7 +1447,7 @@ func (m *Manager) resolveAgentConfig(ctx context.Context, cfg ports.SpawnConfig,
 	if catalog.Stale || selected == nil {
 		return ports.AgentConfig{}, fmt.Errorf("%w for model %q", ports.ErrModelCapabilitiesUnavailable, modelID)
 	}
-	if resolved.Effort != "" && !containsString(selected.Efforts, resolved.Effort) {
+	if resolved.Effort != "" && !selected.EffortUnknown && !containsString(selected.Efforts, resolved.Effort) {
 		return ports.AgentConfig{}, fmt.Errorf("%w %q for model %q", ports.ErrUnsupportedEffort, resolved.Effort, modelID)
 	}
 	return resolved, nil

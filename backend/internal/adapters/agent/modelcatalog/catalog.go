@@ -343,7 +343,7 @@ func discoverClaudeCatalog(
 		}
 		normalized := normalize(models)
 		if len(normalized) > 0 {
-			base.Models = applyClaudeConfiguredDefault(normalized, settings.Model)
+			base.Models = applyClaudeConfiguredDefault(normalized, settings.Model, claudeGatewayConfigured(settings))
 			base.Source = "provider"
 			return base, nil
 		}
@@ -357,8 +357,8 @@ func discoverClaudeCatalog(
 
 func claudeFallbackModels(settings agentcreds.ClaudeSettings) []ports.AgentModelInfo {
 	static := normalize(claudeCodeModels())
-	if strings.TrimSpace(settings.Env["ANTHROPIC_BASE_URL"]) == "" {
-		return applyClaudeConfiguredDefault(static, settings.Model)
+	if !claudeGatewayConfigured(settings) {
+		return applyClaudeConfiguredDefault(static, settings.Model, false)
 	}
 
 	configured := []string{
@@ -385,15 +385,21 @@ func claudeFallbackModels(settings agentcreds.ClaudeSettings) []ports.AgentModel
 		models = append(models, item)
 	}
 	for _, id := range configured {
-		appendModel(ports.AgentModelInfo{ID: id})
+		// The gateway was not asked about these aliases here; only Claude
+		// Code knows which effort levels the resolved model accepts.
+		appendModel(ports.AgentModelInfo{ID: id, EffortUnknown: true})
 	}
 	for _, item := range static {
 		appendModel(item)
 	}
-	return applyClaudeConfiguredDefault(models, settings.Model)
+	return applyClaudeConfiguredDefault(models, settings.Model, true)
 }
 
-func applyClaudeConfiguredDefault(models []ports.AgentModelInfo, configured string) []ports.AgentModelInfo {
+func claudeGatewayConfigured(settings agentcreds.ClaudeSettings) bool {
+	return strings.TrimSpace(settings.Env["ANTHROPIC_BASE_URL"]) != ""
+}
+
+func applyClaudeConfiguredDefault(models []ports.AgentModelInfo, configured string, effortUnknown bool) []ports.AgentModelInfo {
 	if configured == "" {
 		return models
 	}
@@ -409,7 +415,10 @@ func applyClaudeConfiguredDefault(models []ports.AgentModelInfo, configured stri
 		// pins "sonnet" while provider discovery returns concrete snapshot IDs),
 		// carry the human label so the picker reads "Sonnet" rather than a raw
 		// id — this is the local CLI's configured default, shown verbatim.
-		models = append(models, ports.AgentModelInfo{ID: configured, Label: claudeConfiguredLabel(configured), IsDefault: true})
+		models = append(models, ports.AgentModelInfo{
+			ID: configured, Label: claudeConfiguredLabel(configured), IsDefault: true,
+			EffortUnknown: effortUnknown,
+		})
 	}
 	return models
 }
