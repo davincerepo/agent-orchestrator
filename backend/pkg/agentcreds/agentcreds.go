@@ -122,6 +122,14 @@ type Model struct {
 	// Opus 4.6 omits xhigh, and the 5 family accepts all five. A hardcoded list
 	// would be wrong for most of the catalog within a release.
 	Efforts []string
+	// EffortUnknown marks a provider that did not answer the effort question
+	// at all: an Anthropic-compatible gateway whose /v1/models carries no
+	// capabilities. There the agent harness (Claude Code keeps its own model
+	// metadata) remains the authority, so callers must pass the choice through
+	// instead of reading the absent list as "supports none". Only gateways set
+	// it; the first-party API always answers, and its absent effort object is
+	// the documented "no effort" verdict above.
+	EffortUnknown bool
 }
 
 // Result is a validation outcome together with what can be said about it.

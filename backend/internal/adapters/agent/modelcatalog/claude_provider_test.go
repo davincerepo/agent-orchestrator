@@ -270,6 +270,7 @@ func TestProviderEffortsSurviveNormalization(t *testing.T) {
 			{ID: "claude-opus-5", Efforts: []string{"low", "medium", "high", "xhigh", "max"}},
 			{ID: "claude-opus-4-6", Efforts: []string{"low", "medium", "high", "max"}},
 			{ID: "claude-sonnet-4-5-20250929"},
+			{ID: "glm-5.3", EffortUnknown: true},
 		}, nil
 	}
 	catalog, err := discoverClaudeCatalog(context.Background(), claudeRequest(t), list)
@@ -285,5 +286,10 @@ func TestProviderEffortsSurviveNormalization(t *testing.T) {
 	}
 	if got["claude-sonnet-4-5-20250929"] != 0 {
 		t.Fatalf("a model with no efforts must carry none, got %d", got["claude-sonnet-4-5-20250929"])
+	}
+	for _, model := range catalog.Models {
+		if model.ID == "glm-5.3" && !model.EffortUnknown {
+			t.Fatalf("gateway model without advertised capabilities lost its unknown-effort marker: %+v", model)
+		}
 	}
 }

@@ -8,6 +8,7 @@
 - Terminal 每次进入读取当前运行代际对应的 Codex 原生历史，显示 Model / Effort / Fast。只读已保存记录，未落盘变化下次进入才可见；未知值和读取失败保留为未确认。
 - Chat / Terminal 切换在源端停止并落盘后读取参数，与控制权切换一起提交；Chat 明确的下一轮选择优先于原生快照，Terminal 原生状态优先于旧 Chat 设置。读取失败中止切换，保留官方回滚机制。
 - Session 只读写官方 `Effort/effort`。升级时一次性搬迁旧 `sessions.reasoning_effort` 数据并删除旧列；已有非空官方值优先。官方 Chat 设置中的 `ReasoningEffort` 与 provider 协议字段保持原样。
+- Claude 网关目录区分"未申报"与"不支持"：`/v1/models` 不带 `capabilities` 的网关模型标记 `effortUnknown`，配置的 effort 原样透传，由 Claude Code（真正的模型元数据所有者，ACP 会话内校验具体档位）接受或拒绝；只有 provider 明确申报档位列表（或明确 `supported:false`）时 AO 才做白名单校验和拒绝。第一方 Anthropic API 的空列表仍是"该模型不支持 effort"的真实答案。
 - Fleet 的 Fast 列通过独立、幂等的 schema 扩展管理，不再占用官方 goose 迁移编号。旧 Fleet 使用过的 0140/0148 仅在确认官方对应 schema 未执行时释放，保留已有 Fast 数据。
 
 验收以相对官方的代码差异为准：不再引入第二套 Session Effort 字段或业务读写链，不整笔重放旧模型参数补丁。同步时核对 Codex thread/resume 与设置通知、能力目录和控制权切换事务。参数读取不代表本轮已采用该设置，Chat 下一轮覆盖与 provider 实际返回值分别保留。

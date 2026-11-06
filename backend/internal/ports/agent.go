@@ -216,7 +216,14 @@ type AgentModelInfo struct {
 	// setting, which is a real answer rather than a missing one — Sonnet 4.5
 	// and Haiku 4.5 accept none while the 5 family accepts five — so a picker
 	// must render no effort control at all rather than an empty one.
-	Efforts            []string           `json:"efforts,omitempty"`
+	Efforts []string `json:"efforts,omitempty"`
+	// EffortUnknown marks an entry from a provider that did not advertise
+	// capabilities at all (an Anthropic-compatible gateway without
+	// capabilities in its model list). Empty Efforts then means "unknown",
+	// not "no effort": the agent owns the authoritative model metadata, so a
+	// configured level must be passed through for the agent to accept or
+	// reject rather than dropped by AO.
+	EffortUnknown      bool               `json:"effortUnknown,omitempty"`
 	DefaultEffort      string             `json:"defaultEffort,omitempty"`
 	ServiceTiers       []ModelServiceTier `json:"serviceTiers,omitempty"`
 	DefaultServiceTier string             `json:"defaultServiceTier,omitempty"`

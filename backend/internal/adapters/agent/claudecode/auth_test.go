@@ -662,8 +662,44 @@ func TestProviderModelsReuseTheValidatedAuthResponse(t *testing.T) {
 	if !slices.Equal(models[0].Efforts, wantEfforts) {
 		t.Fatalf("efforts = %v, want %v", models[0].Efforts, wantEfforts)
 	}
+	if models[0].EffortUnknown {
+		t.Fatalf("advertised efforts must not be marked unknown: %+v", models[0])
+	}
 	if requests != 1 {
 		t.Fatalf("provider requests = %d, want one validation response reused for discovery", requests)
+	}
+}
+
+// A gateway that returns no capabilities leaves the effort levels unknown;
+// Claude Code, not the gateway response, knows which levels its custom models
+// accept. The flag must reach the catalog so configured levels pass through.
+func TestProviderModelsMarkGatewayEffortUnknown(t *testing.T) {
+	clearClaudeCredentialEnv(t)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-gateway-models")
+	InvalidateAuthCache()
+	t.Cleanup(InvalidateAuthCache)
+
+	server := withStubValidator(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"glm-5.3","display_name":"GLM-5.3"}]}`))
+	})
+	t.Setenv("ANTHROPIC_BASE_URL", server.URL)
+
+	status, ok := (&Plugin{}).probeAuthStatus(
+		context.Background(), claudeAuthReport{APIProvider: "gateway"}, (agentcreds.ResolveOptions{}).WithClaudeSettings(context.Background()),
+	)
+	if !ok || status != ports.AgentAuthStatusAuthorized {
+		t.Fatalf("status = %q, want the provider acceptance", status)
+	}
+
+	models, err := ProviderModels(context.Background(), "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0].ID != "glm-5.3" || !models[0].EffortUnknown {
+		t.Fatalf("models = %+v, want glm-5.3 with unknown effort", models)
+	}
+	if models[0].Efforts != nil {
+		t.Fatalf("efforts = %v, want none advertised", models[0].Efforts)
 	}
 }
 
