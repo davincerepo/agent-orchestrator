@@ -18,5 +18,6 @@
 - 官方基线：ACP 系 harness（如 Claude Code）输入框显示 provider 会话的实时 config options，`default` 占位按官方实现改名显示；Codex 输入框显示 AO 自存的下一轮设置，未显式选择时回落线程默认值，该默认来自 `thread/start` / `thread/resume` 响应记录的线程状态；Start/Resume 均把自存 model/effort 作为 override 下发，意图与实测是两个分别保留的事实。
 - 官方缺口：复用持久 host 的 live-rejoin 把 AO 意图直接当作线程状态写入显示缓存；不消费 `thread/settings/updated` 通知；重进会话不重读线程真实设置；没有 Terminal 显示与 Chat/Terminal 切换场景。
 - Fleet 差异：live-rejoin 不预填意图；进入会话经 loaded-thread 成员检查后以 bare `thread/resume` 读取真实设置；设置通知即时更新缓存且视为更新证据，每轮 `turn/start` 后缓存失效、下次进入重读；未知或读取失败显示未确认，不用意图、全局默认或旧缓存冒充实测。Terminal 显示与切换规则见上。官方同步时若改动了 ACP config options 或 Codex 线程状态语义，需对照本节核对差异。
+- 已知边界：输入框的模型/参数控件同时承担"用户选择"与"回显生效值"两个职责，且回显语义随 harness 而不同——ACP 系显示 provider 已确认的生效值，写入为非乐观更新（请求期间控件禁用，回包原子替换目录，失败保持旧值并显示错误，均为官方实现）；Codex 显示 AO 已保存的下一轮意图，保存成功即回显、下一轮下发。两层语义均正确且不存在假回显，但界面未标注当前显示的到底是哪一层，是排障时"显示值含义不清"的根源。后续若改进，方向是显式标注回显来源并提供 provider 实测值的对比视图，而不是改写更新时序。
 
 验收以相对官方的代码差异为准：不再引入第二套 Session Effort 字段或业务读写链，不整笔重放旧模型参数补丁。同步时核对 Codex thread/resume 与设置通知、能力目录和控制权切换事务。参数读取不代表本轮已采用该设置，Chat 下一轮覆盖与 provider 实际返回值分别保留。
