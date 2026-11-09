@@ -737,6 +737,40 @@ WHERE ub.session_id = ?
 GROUP BY ub.harness, mue.model_id
 ORDER BY SUM(mue.input_tokens + mue.output_tokens) DESC, ub.harness, mue.model_id;
 
+-- name: ListProjectSessionHourlyUsage :many
+-- Hour buckets are cut from the raw created_at prefix: timestamps are stored
+-- as Go time strings in UTC, so the first 13 characters are "YYYY-MM-DD HH".
+-- Hours without events do not exist by construction, which keeps the row count
+-- bounded by observed activity.
+SELECT
+    ub.session_id,
+    s.num,
+    s.kind,
+    s.is_terminated,
+    s.created_at AS session_created_at,
+    CAST(COALESCE(integrity.incomplete, 0) AS INTEGER) AS incomplete,
+    ub.harness,
+    mue.model_id,
+    substr(mue.created_at, 1, 13) AS hour_utc,
+    CAST(COUNT(*) AS INTEGER) AS event_count,
+    CAST(COALESCE(SUM(mue.input_tokens), 0) AS INTEGER) AS input_tokens,
+    CAST(COUNT(mue.input_tokens) AS INTEGER) AS known_input_token_count,
+    CAST(COALESCE(SUM(mue.cached_input_tokens), 0) AS INTEGER) AS cached_input_tokens,
+    CAST(COUNT(mue.cached_input_tokens) AS INTEGER) AS known_cached_input_token_count,
+    CAST(COALESCE(SUM(mue.uncached_input_tokens), 0) AS INTEGER) AS uncached_input_tokens,
+    CAST(COUNT(mue.uncached_input_tokens) AS INTEGER) AS known_uncached_input_token_count,
+    CAST(COALESCE(SUM(mue.output_tokens), 0) AS INTEGER) AS output_tokens,
+    CAST(COUNT(mue.output_tokens) AS INTEGER) AS known_output_token_count
+FROM model_usage_events mue
+JOIN usage_bindings ub ON ub.id = mue.binding_id
+JOIN sessions s ON s.id = ub.session_id
+LEFT JOIN usage_session_integrity integrity ON integrity.session_id = ub.session_id
+WHERE s.project_id = sqlc.arg(project_id)
+  AND mue.created_at IS NOT NULL
+GROUP BY ub.session_id, s.num, s.kind, s.is_terminated, session_created_at,
+    integrity.incomplete, ub.harness, mue.model_id, hour_utc
+ORDER BY s.num, ub.session_id, ub.harness, mue.model_id, hour_utc;
+
 -- name: ListCompactSessionUsage :many
 SELECT
     ub.session_id,

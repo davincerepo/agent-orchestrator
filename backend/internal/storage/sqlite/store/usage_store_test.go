@@ -2467,3 +2467,89 @@ func TestUsageStoreRejectsUnknownHarnessAndKind(t *testing.T) {
 		t.Fatal("InsertUsageSource accepted an unknown source kind")
 	}
 }
+
+func TestListProjectSessionHourlyUsage(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	sess := seedUsageSession(t, s, domain.HarnessCodex)
+	now := time.Unix(1700000000, 0).UTC()
+	source := seedUsageSource(t, s, sess, now)
+
+	eventAt := func(key string, tokens domain.UsageTokenMetrics, at time.Time) domain.ModelUsageEvent {
+		event := usageEvent(key, tokens)
+		event.CreatedAt = at
+		return event
+	}
+	flash := eventAt("flash-1", canonicalUsageTokens(10, 5, 5, 1), time.Date(2026, 11, 8, 9, 5, 0, 0, time.UTC))
+	flash.ModelID = "glm-5.3-flash"
+	partialTokens := domain.UsageTokenMetrics{InputTokens: ptrInt64(30)}
+	events := []domain.ModelUsageEvent{
+		eventAt("e1", canonicalUsageTokens(100, 90, 10, 5), time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC)),
+		eventAt("e2", canonicalUsageTokens(200, 180, 20, 8), time.Date(2026, 11, 8, 9, 40, 0, 0, time.UTC)),
+		eventAt("e3", canonicalUsageTokens(50, 40, 10, 3), time.Date(2026, 11, 8, 10, 15, 0, 0, time.UTC)),
+		eventAt("e4", partialTokens, time.Date(2026, 11, 8, 11, 0, 0, 0, time.UTC)),
+		flash,
+	}
+	err := s.ApplyUsageChunk(ctx, source.ID, 0, source.UpdatedAt, domain.SourceCursorState{
+		ByteOffset: 200, State: domain.UsageSourceActive, UpdatedAt: now,
+	}, events)
+	mustNoError(t, err, "apply chunk")
+
+	seedProject(t, s, "other-project")
+	otherRec := sampleRecord("other-project")
+	otherRec.Harness = domain.HarnessCodex
+	other, err := s.CreateSession(ctx, otherRec)
+	mustNoError(t, err, "create other session")
+	otherBinding := mustUpsertUsageBinding(t, s, other, now, domain.UsageBindingRecord{
+		NativeRootID: "root-thread", InitialModelID: "gpt-5", State: domain.UsageBindingActive,
+	})
+	otherSource := mustInsertUsageSource(t, s, now, domain.UsageSourceRecord{
+		BindingID: otherBinding.ID, Kind: domain.UsageSourceCodexRollout,
+		NativeSessionID: "root-thread", ArtifactPath: "/tmp/codex/other.jsonl",
+		State: domain.UsageSourcePending,
+	})
+	err = s.ApplyUsageChunk(ctx, otherSource.ID, 0, otherSource.UpdatedAt, domain.SourceCursorState{
+		ByteOffset: 10, State: domain.UsageSourceActive, UpdatedAt: now,
+	}, []domain.ModelUsageEvent{eventAt("other-1", canonicalUsageTokens(7, 3, 4, 2), now)})
+	mustNoError(t, err, "apply other project chunk")
+
+	rows, err := s.ListProjectSessionHourlyUsage(ctx, "usage")
+	mustNoError(t, err, "list hourly usage")
+	if len(rows) != 1 || rows[0].SessionID != sess.ID {
+		t.Fatalf("rows = %+v, want one row for %s", rows, sess.ID)
+	}
+	got := rows[0]
+	if got.Kind != domain.KindWorker || got.IsTerminated || got.CreatedAt.IsZero() {
+		t.Fatalf("session facts = %+v", got)
+	}
+	if len(got.Models) != 2 {
+		t.Fatalf("models = %+v, want glm-5.3-flash and gpt-5", got.Models)
+	}
+	flashModel, mainModel := got.Models[0], got.Models[1]
+	if flashModel.ModelID != "glm-5.3-flash" || len(flashModel.Buckets) != 1 ||
+		usageTokenValue(flashModel.Buckets[0].Tokens.InputTokens) != 10 {
+		t.Fatalf("flash model = %+v", flashModel)
+	}
+	if len(mainModel.Buckets) != 3 {
+		t.Fatalf("main model buckets = %+v, want three hours", mainModel.Buckets)
+	}
+	first, second, third := mainModel.Buckets[0], mainModel.Buckets[1], mainModel.Buckets[2]
+	if first.HourUTC != "2026-11-08T09" || usageTokenValue(first.Tokens.InputTokens) != 300 ||
+		usageTokenValue(first.Tokens.CachedInputTokens) != 270 || usageTokenValue(first.Tokens.OutputTokens) != 13 {
+		t.Fatalf("first bucket = %+v", first)
+	}
+	if second.HourUTC != "2026-11-08T10" || usageTokenValue(second.Tokens.InputTokens) != 50 {
+		t.Fatalf("second bucket = %+v", second)
+	}
+	if third.HourUTC != "2026-11-08T11" || third.Tokens.InputTokens == nil || third.Tokens.CachedInputTokens != nil {
+		t.Fatalf("partial bucket = %+v, want known input and unknown cached", third)
+	}
+
+	otherRows, err := s.ListProjectSessionHourlyUsage(ctx, "other-project")
+	mustNoError(t, err, "list other project hourly usage")
+	if len(otherRows) != 1 || otherRows[0].SessionID != other.ID {
+		t.Fatalf("other rows = %+v, want one row for %s", otherRows, other.ID)
+	}
+}
+
+func ptrInt64(v int64) *int64 { return &v }

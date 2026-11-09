@@ -1055,6 +1055,104 @@ func (q *Queries) ListLegacyUsageSourceIDs(ctx context.Context) ([]int64, error)
 	return items, nil
 }
 
+const listProjectSessionHourlyUsage = `-- name: ListProjectSessionHourlyUsage :many
+SELECT
+    ub.session_id,
+    s.num,
+    s.kind,
+    s.is_terminated,
+    s.created_at AS session_created_at,
+    CAST(COALESCE(integrity.incomplete, 0) AS INTEGER) AS incomplete,
+    ub.harness,
+    mue.model_id,
+    substr(mue.created_at, 1, 13) AS hour_utc,
+    CAST(COUNT(*) AS INTEGER) AS event_count,
+    CAST(COALESCE(SUM(mue.input_tokens), 0) AS INTEGER) AS input_tokens,
+    CAST(COUNT(mue.input_tokens) AS INTEGER) AS known_input_token_count,
+    CAST(COALESCE(SUM(mue.cached_input_tokens), 0) AS INTEGER) AS cached_input_tokens,
+    CAST(COUNT(mue.cached_input_tokens) AS INTEGER) AS known_cached_input_token_count,
+    CAST(COALESCE(SUM(mue.uncached_input_tokens), 0) AS INTEGER) AS uncached_input_tokens,
+    CAST(COUNT(mue.uncached_input_tokens) AS INTEGER) AS known_uncached_input_token_count,
+    CAST(COALESCE(SUM(mue.output_tokens), 0) AS INTEGER) AS output_tokens,
+    CAST(COUNT(mue.output_tokens) AS INTEGER) AS known_output_token_count
+FROM model_usage_events mue
+JOIN usage_bindings ub ON ub.id = mue.binding_id
+JOIN sessions s ON s.id = ub.session_id
+LEFT JOIN usage_session_integrity integrity ON integrity.session_id = ub.session_id
+WHERE s.project_id = ?1
+  AND mue.created_at IS NOT NULL
+GROUP BY ub.session_id, s.num, s.kind, s.is_terminated, session_created_at,
+    integrity.incomplete, ub.harness, mue.model_id, hour_utc
+ORDER BY s.num, ub.session_id, ub.harness, mue.model_id, hour_utc
+`
+
+type ListProjectSessionHourlyUsageRow struct {
+	SessionID                    domain.SessionID
+	Num                          int64
+	Kind                         domain.SessionKind
+	IsTerminated                 bool
+	SessionCreatedAt             time.Time
+	Incomplete                   int64
+	Harness                      domain.AgentHarness
+	ModelID                      string
+	HourUtc                      string
+	EventCount                   int64
+	InputTokens                  int64
+	KnownInputTokenCount         int64
+	CachedInputTokens            int64
+	KnownCachedInputTokenCount   int64
+	UncachedInputTokens          int64
+	KnownUncachedInputTokenCount int64
+	OutputTokens                 int64
+	KnownOutputTokenCount        int64
+}
+
+// Hour buckets are cut from the raw created_at prefix: timestamps are stored
+// as Go time strings in UTC, so the first 13 characters are "YYYY-MM-DD HH".
+// Hours without events do not exist by construction, which keeps the row count
+// bounded by observed activity.
+func (q *Queries) ListProjectSessionHourlyUsage(ctx context.Context, projectID *domain.ProjectID) ([]ListProjectSessionHourlyUsageRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectSessionHourlyUsage, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectSessionHourlyUsageRow{}
+	for rows.Next() {
+		var i ListProjectSessionHourlyUsageRow
+		if err := rows.Scan(
+			&i.SessionID,
+			&i.Num,
+			&i.Kind,
+			&i.IsTerminated,
+			&i.SessionCreatedAt,
+			&i.Incomplete,
+			&i.Harness,
+			&i.ModelID,
+			&i.HourUtc,
+			&i.EventCount,
+			&i.InputTokens,
+			&i.KnownInputTokenCount,
+			&i.CachedInputTokens,
+			&i.KnownCachedInputTokenCount,
+			&i.UncachedInputTokens,
+			&i.KnownUncachedInputTokenCount,
+			&i.OutputTokens,
+			&i.KnownOutputTokenCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUntimedUsageSourceIDs = `-- name: ListUntimedUsageSourceIDs :many
 SELECT DISTINCT usage_source_id
 FROM model_usage_events
