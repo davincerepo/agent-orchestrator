@@ -15345,6 +15345,37 @@ paths:
       summary: Replace the user's model prices and reprice the usage they change
       tags:
       - usage
+  /api/v1/usage/projects/{projectId}/sessions:
+    get:
+      operationId: listProjectSessionUsage
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControllersListProjectSessionUsageResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List per-session hourly UTC token buckets for one project
+      tags:
+      - usage
   /api/v1/usage/report:
     get:
       operationId: getUsageReport
@@ -18391,6 +18422,42 @@ components:
       - sessionId
       - displayName
       type: object
+    ControllersHourlyUsageBucketResponse:
+      properties:
+        cachedInputTokens:
+          description: Input read from an existing provider cache.
+          minimum: 0
+          type:
+          - "null"
+          - integer
+        hour:
+          description: UTC hour bucket, formatted YYYY-MM-DDTHH.
+          type: string
+        inputTokens:
+          description: Total input, including cached and uncached input.
+          minimum: 0
+          type:
+          - "null"
+          - integer
+        outputTokens:
+          minimum: 0
+          type:
+          - "null"
+          - integer
+        uncachedInputTokens:
+          description: Input not read from an existing provider cache. Includes cache
+            writes.
+          minimum: 0
+          type:
+          - "null"
+          - integer
+      required:
+      - hour
+      - inputTokens
+      - cachedInputTokens
+      - uncachedInputTokens
+      - outputTokens
+      type: object
     ControllersKeepAwakeStatus:
       properties:
         active:
@@ -18421,6 +18488,15 @@ components:
           type: string
         deleteArtifacts:
           type: boolean
+      type: object
+    ControllersListProjectSessionUsageResponse:
+      properties:
+        sessions:
+          items:
+            $ref: '#/components/schemas/ControllersProjectSessionUsageResponse'
+          type: array
+      required:
+      - sessions
       type: object
     ControllersPairDeviceRequest:
       properties:
@@ -18658,6 +18734,35 @@ components:
       - kind
       - title
       type: object
+    ControllersProjectSessionUsageResponse:
+      properties:
+        createdAt:
+          format: date-time
+          type: string
+        incomplete:
+          type: boolean
+        isTerminated:
+          type: boolean
+        kind:
+          type: string
+        models:
+          items:
+            $ref: '#/components/schemas/ControllersSessionModelHourlyUsageResponse'
+          type: array
+        num:
+          format: int64
+          type: integer
+        sessionId:
+          type: string
+      required:
+      - sessionId
+      - num
+      - kind
+      - isTerminated
+      - createdAt
+      - incomplete
+      - models
+      type: object
     ControllersRemoteHostAccountTokenResponse:
       properties:
         hostId:
@@ -18827,6 +18932,21 @@ components:
       - sessionId
       - title
       - exists
+      type: object
+    ControllersSessionModelHourlyUsageResponse:
+      properties:
+        buckets:
+          items:
+            $ref: '#/components/schemas/ControllersHourlyUsageBucketResponse'
+          type: array
+        harness:
+          type: string
+        modelId:
+          type: string
+      required:
+      - harness
+      - modelId
+      - buckets
       type: object
     ControllersSessionView:
       properties:

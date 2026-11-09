@@ -5085,6 +5085,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/usage/projects/{projectId}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List per-session hourly UTC token buckets for one project */
+        get: operations["listProjectSessionUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/usage/report": {
         parameters: {
             query?: never;
@@ -6250,6 +6267,17 @@ export interface components {
             displayName: string;
             sessionId: string;
         };
+        ControllersHourlyUsageBucketResponse: {
+            /** @description Input read from an existing provider cache. */
+            cachedInputTokens: null | number;
+            /** @description UTC hour bucket, formatted YYYY-MM-DDTHH. */
+            hour: string;
+            /** @description Total input, including cached and uncached input. */
+            inputTokens: null | number;
+            outputTokens: null | number;
+            /** @description Input not read from an existing provider cache. Includes cache writes. */
+            uncachedInputTokens: null | number;
+        };
         ControllersKeepAwakeStatus: {
             active: boolean;
             enabled: boolean;
@@ -6263,6 +6291,9 @@ export interface components {
         ControllersKillSessionRequest: {
             callerSessionId?: string;
             deleteArtifacts?: boolean;
+        };
+        ControllersListProjectSessionUsageResponse: {
+            sessions: components["schemas"]["ControllersProjectSessionUsageResponse"][];
         };
         ControllersPairDeviceRequest: {
             /** @description Name shown in the host's device list. */
@@ -6378,6 +6409,17 @@ export interface components {
             /** @description The tab's label. */
             title: string;
         };
+        ControllersProjectSessionUsageResponse: {
+            /** Format: date-time */
+            createdAt: string;
+            incomplete: boolean;
+            isTerminated: boolean;
+            kind: string;
+            models: components["schemas"]["ControllersSessionModelHourlyUsageResponse"][];
+            /** Format: int64 */
+            num: number;
+            sessionId: string;
+        };
         ControllersRemoteHostAccountTokenResponse: {
             hostId: string;
             hostKey: string;
@@ -6446,6 +6488,11 @@ export interface components {
             exists: boolean;
             sessionId: string;
             title: string;
+        };
+        ControllersSessionModelHourlyUsageResponse: {
+            buckets: components["schemas"]["ControllersHourlyUsageBucketResponse"][];
+            harness: string;
+            modelId: string;
         };
         ControllersSessionView: {
             activity: components["schemas"]["DomainActivity"];
@@ -28431,6 +28478,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    listProjectSessionUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControllersListProjectSessionUsageResponse"];
                 };
             };
             /** @description Internal Server Error */

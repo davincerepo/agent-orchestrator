@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
 
 type usageSummaryStore interface {
 	ListCompactSessionUsageAggregates(context.Context, domain.ProjectID) ([]domain.CompactSessionUsageAggregate, error)
+	ListProjectSessionHourlyUsage(context.Context, domain.ProjectID) ([]domain.SessionHourlyUsage, error)
 }
 
 // SummaryReader derives token and estimated-cost summaries from normalized
@@ -40,6 +42,30 @@ func (r *SummaryReader) ListCompact(ctx context.Context, projectID domain.Projec
 		})
 	}
 	return out, nil
+}
+
+// ListProjectSessionHourly returns per-session hourly UTC token buckets for
+// every session of a project with observed usage. Synthetic models are hidden,
+// matching the session inspector.
+func (r *SummaryReader) ListProjectSessionHourly(ctx context.Context, projectID domain.ProjectID) ([]domain.SessionHourlyUsage, error) {
+	if r == nil || r.store == nil {
+		return nil, fmt.Errorf("usage summary store is unavailable")
+	}
+	rows, err := r.store.ListProjectSessionHourlyUsage(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		visible := make([]domain.SessionModelHourlyUsage, 0, len(rows[i].Models))
+		for _, model := range rows[i].Models {
+			if strings.EqualFold(strings.TrimSpace(model.ModelID), "<synthetic>") {
+				continue
+			}
+			visible = append(visible, model)
+		}
+		rows[i].Models = visible
+	}
+	return rows, nil
 }
 
 func estimatedCost(raw domain.UsageCostAggregate) (*domain.EstimatedCost, error) {

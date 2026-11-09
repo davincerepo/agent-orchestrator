@@ -20,6 +20,7 @@ import (
 // UsageSummaryService is the controller-facing compact usage read contract.
 type UsageSummaryService interface {
 	ListCompact(context.Context, domain.ProjectID) ([]domain.CompactSessionUsage, error)
+	ListProjectSessionHourly(context.Context, domain.ProjectID) ([]domain.SessionHourlyUsage, error)
 }
 
 // UsageReportService builds the usage page's report.
@@ -88,6 +89,7 @@ func (c *UsageController) Register(r chi.Router) {
 	r.Get("/usage/prices", c.getPrices)
 	r.Put("/usage/prices", c.setPrices)
 	r.Get("/usage/sessions", c.listSessions)
+	r.Get("/usage/projects/{projectId}/sessions", c.listProjectSessions)
 	r.Get("/usage/sessions/memory", c.listMemory)
 	r.Get("/usage/memory/pressure", c.getPressure)
 }
@@ -308,6 +310,46 @@ func (c *UsageController) listMemory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	envelope.WriteJSON(w, http.StatusOK, ListSessionMemoryResponse{Sessions: out, System: system, App: app})
+}
+
+func (c *UsageController) listProjectSessions(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, "GET", "/api/v1/usage/projects/{projectId}/sessions")
+		return
+	}
+	items, err := c.Svc.ListProjectSessionHourly(r.Context(), domain.ProjectID(chi.URLParam(r, "projectId")))
+	if err != nil {
+		c.Log.WarnContext(r.Context(), "failed to list project session hourly usage", "error", err)
+		envelope.WriteError(w, r, err)
+		return
+	}
+	out := make([]ProjectSessionUsageResponse, 0, len(items))
+	for _, item := range items {
+		out = append(out, projectSessionUsageResponse(item))
+	}
+	envelope.WriteJSON(w, http.StatusOK, ListProjectSessionUsageResponse{Sessions: out})
+}
+
+func projectSessionUsageResponse(item domain.SessionHourlyUsage) ProjectSessionUsageResponse {
+	models := make([]SessionModelHourlyUsageResponse, 0, len(item.Models))
+	for _, model := range item.Models {
+		buckets := make([]HourlyUsageBucketResponse, 0, len(model.Buckets))
+		for _, bucket := range model.Buckets {
+			buckets = append(buckets, HourlyUsageBucketResponse{
+				Hour:        bucket.HourUTC,
+				InputTokens: bucket.Tokens.InputTokens, CachedInputTokens: bucket.Tokens.CachedInputTokens,
+				UncachedInputTokens: bucket.Tokens.UncachedInputTokens, OutputTokens: bucket.Tokens.OutputTokens,
+			})
+		}
+		models = append(models, SessionModelHourlyUsageResponse{
+			Harness: string(model.Harness), ModelID: model.ModelID, Buckets: buckets,
+		})
+	}
+	return ProjectSessionUsageResponse{
+		SessionID: item.SessionID, Num: item.Num, Kind: string(item.Kind),
+		IsTerminated: item.IsTerminated, CreatedAt: item.CreatedAt,
+		Incomplete: item.Incomplete, Models: models,
+	}
 }
 
 func (c *UsageController) getPressure(w http.ResponseWriter, r *http.Request) {
