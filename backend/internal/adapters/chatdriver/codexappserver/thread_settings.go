@@ -107,7 +107,7 @@ func (c *conversation) readLoadedThreadSettings(ctx context.Context) error {
 	defer c.mu.Unlock()
 	// A provider settings event received during the request is newer evidence.
 	if c.threadSettingsRevision == revision {
-		c.threadModel, c.threadEffort, c.threadServiceTier = resp.Model, resp.ReasoningEffort, resp.ServiceTier
+		c.threadModel, c.threadEffort = resp.Model, resp.ReasoningEffort
 		c.threadSettingsKnown = true
 		c.threadSettingsRevision++
 	}
@@ -130,15 +130,8 @@ func (c *conversation) trackThreadSettings(n notification) {
 		return
 	}
 	c.mu.Lock()
-	c.threadModel, c.threadEffort, c.threadServiceTier = params.Settings.Model, params.Settings.Effort, params.Settings.ServiceTier
+	c.threadModel, c.threadEffort = params.Settings.Model, params.Settings.Effort
 	c.threadSettingsKnown = true
 	c.threadSettingsRevision++
 	c.mu.Unlock()
-}
-
-func effectiveServiceTier(tier string) string {
-	if tier == "" {
-		return "default"
-	}
-	return tier
 }

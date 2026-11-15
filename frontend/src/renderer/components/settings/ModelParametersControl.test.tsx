@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { findParameterModel, ServiceTierControl, resolveServiceTier } from "./ModelParametersControl";
-const model = { id: "test-model", isDefault: true, serviceTiers: [{ id: "priority", name: "Fast" }] };
+const model = { id: "test-model", isDefault: true, supportsFast: true };
 describe("Codex service tier", () => {
  it("sends explicit Fast off instead of inheriting priority", async () => {
   const onChange = vi.fn(); const user = userEvent.setup();

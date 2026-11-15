@@ -62,7 +62,7 @@ func TestFleetThreadSettingsRecoverActualAndCache(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(models) != 2 || models[0].Default || !models[1].Default || models[1].DefaultEffort != "xhigh" || models[1].DefaultServiceTier != "priority" {
+		if len(models) != 2 || models[0].Default || !models[1].Default || models[1].DefaultEffort != "xhigh" {
 			t.Fatalf("did not recover actual settings: %+v", models)
 		}
 	}
@@ -144,7 +144,7 @@ func TestFleetThreadSettingsConcurrentReadsAndNewerNotification(t *testing.T) {
 	srv.push(`{"id":` + string(*f.ID) + `,"result":` + fleetActualSettings + `}`)
 	wg.Wait()
 	models, err := c.ListModels(context.Background())
-	if err != nil || models[1].DefaultEffort != "high" || models[1].DefaultServiceTier != "default" {
+	if err != nil || models[1].DefaultEffort != "high" {
 		t.Fatalf("new settings overwritten: %+v, %v", models, err)
 	}
 	if fleetMethodCount(srv, "thread/resume") != 1 {
@@ -167,7 +167,7 @@ func TestFleetThreadSettingsNotificationAndTurnInvalidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(models) != 3 || models[0].Default || models[1].Default || !models[2].Default || models[2].ID != "custom" || models[2].DefaultEffort != "" || models[2].DefaultServiceTier != "default" {
+	if len(models) != 3 || models[0].Default || models[1].Default || !models[2].Default || models[2].ID != "custom" || models[2].DefaultEffort != "" {
 		t.Fatalf("unknown catalog model/null settings not preserved: %+v", models)
 	}
 	if fleetMethodCount(srv, "thread/resume") != 2 {

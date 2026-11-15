@@ -33,7 +33,7 @@ func TestFleetReviewerParameterOverridesReachLaunch(t *testing.T) {
 				launcher := &fakeLauncher{handle: "review-mer-1"}
 				projects := fakeProjects{cfg: domain.ProjectConfig{Reviewers: []domain.ReviewerConfig{{Harness: projectHarness, AgentConfig: base}}}}
 				eng := newEngineForTest(&fakeStore{}, fakeSessions{rec: worker, ok: true}, prAt("sha1"), projects, launcher)
-				if _, err := eng.Trigger(context.Background(), worker.ID, harness, request); err != nil {
+				if _, err := eng.TriggerWithOptions(context.Background(), worker.ID, TriggerOptions{Harness: harness, Config: request}); err != nil {
 					t.Fatal(err)
 				}
 				if got := launcher.gotSpec.AgentConfig; got != want {

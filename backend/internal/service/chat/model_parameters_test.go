@@ -17,7 +17,7 @@ type fleetModelConversation struct{ *fakeConversation }
 
 func (c *fleetModelConversation) ListModels(context.Context) ([]ports.ChatModel, error) {
 	return []ports.ChatModel{
-		{ID: "fast-model", Default: true, Efforts: []string{"low", "high", "ultra"}, ServiceTiers: []ports.ModelServiceTier{{ID: "priority", Name: "Fast"}}},
+		{ID: "fast-model", Default: true, Efforts: []string{"low", "high", "ultra"}, FastTier: "priority"},
 		{ID: "plain-model", Efforts: []string{"low"}},
 	}, nil
 }

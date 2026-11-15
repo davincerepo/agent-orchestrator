@@ -1,15 +1,37 @@
 import type { DashboardPR, DashboardSession, PRReviewState, ReviewRun, SessionPRSummary, SessionReviews } from "./api";
 
-export function reviewRouteForSession(session: DashboardSession) {
+export function reviewRouteForSession(session: DashboardSession, hostId?: string) {
 	const pr = session.prs?.[0] ?? session.pr;
-	return pr ? reviewRouteForPR(session.id, pr) : undefined;
+	return pr ? reviewRouteForPR(session.id, pr, hostId) : undefined;
 }
 
-export function reviewRouteForPR(sessionId: string, pr: Pick<DashboardPR, "number" | "url">) {
+export function reviewRouteForPR(sessionId: string, pr: Pick<DashboardPR, "number" | "url">, hostId?: string) {
 	return {
 		pathname: "/review/[sessionId]" as const,
-		params: { sessionId, prNumber: String(pr.number), prUrl: pr.url },
+		params: { sessionId, prNumber: String(pr.number), prUrl: pr.url, ...(hostId ? { hostId } : {}) },
 	};
+}
+
+/** The chat of the worker that owns a pull request, which its PR page and PR row both open. */
+export function workerRouteForSession(session: Pick<DashboardSession, "id" | "projectId">, hostId?: string) {
+	return {
+		pathname: "/session/[id]" as const,
+		params: { id: session.id, projectId: session.projectId, ...(hostId ? { hostId } : {}) },
+	};
+}
+
+/**
+ * Whether the screen under the PR page is already this worker's chat. The chat
+ * opens its PR page, so opening the worker from there should go back rather than
+ * stack a second copy of the same chat.
+ */
+export function previousRouteIsWorker(
+	routes: readonly { name: string; params?: object }[],
+	index: number,
+	sessionId: string,
+): boolean {
+	const previous = index > 0 ? routes[index - 1] : undefined;
+	return previous?.name === "session/[id]" && (previous.params as { id?: unknown } | undefined)?.id === sessionId;
 }
 
 /** The chat shortcut is for PRs that can still be reviewed. */
@@ -128,15 +150,16 @@ export function latestAutoReviewFailure(reviews: PRReviewState[], autoReviewEnab
 		.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 }
 
-export function reviewerDestination(data: SessionReviews, review: PRReviewState, sessionId: string) {
+export function reviewerDestination(data: SessionReviews, review: PRReviewState, sessionId: string, hostId?: string) {
 	const surface = data.reviewerSurface;
 	if (!surface) return undefined;
+	const hostParam = hostId ? { hostId } : {};
 	if (surface.mode === "chat") {
-		return { pathname: "/reviewer/[reviewId]" as const, params: { reviewId: surface.reviewId, sessionId, title: review.title } };
+		return { pathname: "/reviewer/[reviewId]" as const, params: { reviewId: surface.reviewId, sessionId, title: review.title, ...hostParam } };
 	}
 	const handleId = surface.handleId || data.reviewerHandleId;
 	if (!handleId) return undefined;
-	return { pathname: "/shell/[handleId]" as const, params: { handleId, sessionId, title: `Review · PR #${review.prNumber}`, kind: "reviewer" } };
+	return { pathname: "/shell/[handleId]" as const, params: { handleId, sessionId, title: `Review · PR #${review.prNumber}`, kind: "reviewer", ...hostParam } };
 }
 
 export type ReviewerControls = {

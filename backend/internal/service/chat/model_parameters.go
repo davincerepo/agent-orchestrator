@@ -43,7 +43,7 @@ func validateModelParameters(ctx context.Context, harness domain.AgentHarness, c
 		if settings.ReasoningEffort != "" && !slices.Contains(model.Efforts, settings.ReasoningEffort) {
 			return fmt.Errorf("%w: %s does not support effort %s", ErrModelParameters, model.ID, settings.ReasoningEffort)
 		}
-		if settings.ServiceTier == "priority" && !slices.ContainsFunc(model.ServiceTiers, func(tier ports.ModelServiceTier) bool { return tier.ID == "priority" }) {
+		if settings.ServiceTier == "priority" && model.FastTier == "" {
 			return fmt.Errorf("%w: %s does not support Fast", ErrModelParameters, model.ID)
 		}
 		return nil

@@ -2,18 +2,17 @@ import { SettingsOptionMenu } from "./SettingsOptionMenu";
 
 export type ServiceTier = "default" | "priority";
 export type ModelParameterCapabilities = {
- serviceTiers?: { id: string; name: string; description?: string }[];
- defaultServiceTier?: string;
+ supportsFast?: boolean;
 };
 export function supportsFast(model?: ModelParameterCapabilities): boolean {
- return model?.serviceTiers?.some((tier) => tier.id === "priority") ?? false;
+ return model?.supportsFast ?? false;
 }
 // Unknown custom models must not borrow another model's capabilities.
 export function findParameterModel<T extends ModelParameterCapabilities & { id: string; isDefault?: boolean }>(models: T[] | undefined, model: string): T | undefined {
  return model ? models?.find((item) => item.id === model) : models?.find((item) => item.isDefault);
 }
 export function resolveServiceTier(model: ModelParameterCapabilities | undefined, value?: string): ServiceTier {
- return supportsFast(model) && (value || model?.defaultServiceTier) === "priority" ? "priority" : "default";
+ return supportsFast(model) && value === "priority" ? "priority" : "default";
 }
 export function ServiceTierControl({ model, value, onChange, disabled = false, ariaLabel = "Fast" }: {
  ariaLabel?: string;

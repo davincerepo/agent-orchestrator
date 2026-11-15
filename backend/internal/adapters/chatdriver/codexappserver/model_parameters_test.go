@@ -77,13 +77,10 @@ func TestFleetModelCapabilitiesModernAndLegacy(t *testing.T) {
 	if len(models) != 4 || len(models[0].Efforts) != 2 || models[0].Efforts[1] != "ultra" || models[0].DefaultEffort != "high" {
 		t.Fatalf("models = %+v", models)
 	}
-	if len(models[0].ServiceTiers) != 1 || models[0].ServiceTiers[0].Description != "Lower latency" || models[0].DefaultServiceTier != "default" {
-		t.Fatalf("modern tiers = %+v", models[0])
+	if models[0].FastTier != "priority" {
+		t.Fatalf("modern fast tier = %q, want priority", models[0].FastTier)
 	}
-	if len(models[1].ServiceTiers) != 1 || models[1].ServiceTiers[0].ID != "priority" {
-		t.Fatalf("legacy tiers = %+v", models[1])
-	}
-	if len(models[2].ServiceTiers) != 0 || len(models[3].ServiceTiers) != 0 {
-		t.Fatal("invented unsupported capabilities")
+	if models[1].FastTier != "" || models[2].FastTier != "" || models[3].FastTier != "" {
+		t.Fatalf("legacy/unsupported/plain must not advertise fast: %+v", models[1:])
 	}
 }
