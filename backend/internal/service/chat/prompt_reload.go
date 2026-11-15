@@ -157,8 +157,8 @@ func (s *Service) ReloadChatPrompt(
 	}
 	conversation := source.conversation
 	conversation.ActiveBranchID = branchID
-	replacement := newController(id, source.owner(), conversation, generation, source.harness, provider,
-		s.store, s.activity, s.log, s.newID, s.now, s.onAccountChanged, s.onCodexCapacityChanged)
+	replacement := newController(id, source.owner(), conversation, generation, source.harness, source.workspacePath, provider,
+		s.store, s.activity, s.log, s.newID, s.now, s.onAccountChanged, s.recheckAccount, s.prChanged, s.onCodexCapacityChanged, s.reader)
 	if err := s.store.CreateAndActivateConversationBranch(
 		detachedCtx, id, branch, generation, s.now(),
 	); err != nil {

@@ -57,7 +57,7 @@ func (m *Manager) ReloadSessionPrompt(
 
 	// Recomputed rather than persisted, matching the restore path: the reload
 	// applies the rules as they stand now.
-	systemPrompt, err := m.buildSystemPrompt(ctx, rec.Kind, rec.ProjectID)
+	systemPrompt, err := m.buildSystemPrompt(ctx, rec.Kind, rec.ProjectID, rec.ID, rec.RequestedOutput, true)
 	if err != nil {
 		return ports.ChatPromptReloadResult{}, fmt.Errorf("reload prompt %s: system prompt: %w", id, err)
 	}

@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aoagents/agent-orchestrator/backend/internal/agentlaunch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
+	"github.com/aoagents/agent-orchestrator/backend/internal/providerkeys"
 	sessionmanager "github.com/aoagents/agent-orchestrator/backend/internal/session_manager"
 )
 
@@ -41,7 +43,7 @@ type Launcher interface {
 	// only when a reviewer launch is actually required, after ReviewRun rows
 	// have been created. On failure the engine's Trigger() calls failRuns() to
 	// mark those rows as failed, matching the existing Spawn failure semantics.
-	Preflight(ctx context.Context, harness domain.ReviewerHarness, workspacePath string) error
+	Preflight(ctx context.Context, harness domain.ReviewerHarness, workspacePath string, mode ...domain.ReviewerInterfaceMode) error
 	// live pane (stable per worker, reused across passes) plus any native agent
 	// session id known at launch time.
 	Spawn(ctx context.Context, spec LaunchSpec) (LaunchResult, error)
@@ -55,7 +57,7 @@ type Launcher interface {
 	// Reusable reports whether the harness accepts another review task in its
 	// existing TUI. Reviewers with launch-fixed context return false.
 	Reusable(harness domain.ReviewerHarness) bool
-	// Cancel interrupts a running reviewer pane while keeping the terminal alive.
+	// Cancel interrupts reviewer work while keeping its Chat or terminal alive.
 	Cancel(ctx context.Context, handleID string, harness domain.ReviewerHarness) error
 	// Destroy tears down a reviewer pane entirely. This is used when the owning
 	// worker session itself is torn down, not for user-facing review cancellation.
@@ -70,6 +72,7 @@ type LaunchSpec struct {
 	LaunchID        string
 	WorkerID        domain.SessionID
 	ProjectID       domain.ProjectID
+	ProjectEnv      map[string]string
 	Harness         domain.ReviewerHarness
 	AgentConfig     domain.AgentConfig
 	WorkspacePath   string
@@ -83,6 +86,11 @@ type LaunchSpec struct {
 	TargetSHA              string
 	ReviewQueue            []ports.ReviewTask
 	ReviewIndex            int
+	InterfaceMode          domain.ReviewerInterfaceMode
+	// DeferInitialMessage starts the reviewer without dispatching its review
+	// prompt. The engine uses this while replacing a live reviewer so the old
+	// process can be stopped before the replacement receives executable work.
+	DeferInitialMessage bool
 }
 
 // LaunchResult is the terminal/runtime state created by a reviewer launch.
@@ -97,10 +105,13 @@ type LaunchResult struct {
 
 // ReviewerChatStart is the transport-neutral typed reviewer launch request.
 type ReviewerChatStart struct {
+	BatchID                string
 	ReviewID               string
 	WorkerID               domain.SessionID
 	ProjectID              domain.ProjectID
 	Harness                domain.AgentHarness
+	Model                  string
+	Effort                 string
 	DataDir                string
 	WorkspacePath          string
 	Env                    map[string]string
@@ -116,7 +127,7 @@ type ReviewerChatController interface {
 	PreflightReviewChat(context.Context, domain.AgentHarness) error
 	StartReviewChat(context.Context, ReviewerChatStart) (string, error)
 	RestoreReviewChat(context.Context, ReviewerChatStart) (string, error)
-	SendReviewChat(context.Context, string, string) error
+	SendReviewChat(context.Context, string, string, string) error
 	ReviewChatAlive(string) bool
 	InterruptReviewChat(context.Context, string) error
 	StopReviewChat(context.Context, string) error
@@ -202,7 +213,7 @@ func WithRunFilePath(path string) LauncherOption {
 
 // NewLauncher builds the production reviewer launcher.
 func NewLauncher(reviewers ports.ReviewerResolver, rt reviewerRuntime, dataDir string, opts ...LauncherOption) Launcher {
-	l := &agentLauncher{reviewers: reviewers, runtime: rt, dataDir: dataDir, executable: os.Executable}
+	l := &agentLauncher{reviewers: reviewers, runtime: rt, dataDir: dataDir, executable: agentlaunch.Executable}
 	for _, opt := range opts {
 		opt(l)
 	}
@@ -214,12 +225,12 @@ func NewLauncher(reviewers ports.ReviewerResolver, rt reviewerRuntime, dataDir s
 // resolve the adapter, build the real ReviewCommand, and validate the
 // executable. The only difference from Spawn is that Preflight stops before
 // runtime.Create().
-func (l *agentLauncher) Preflight(ctx context.Context, harness domain.ReviewerHarness, workspacePath string) error {
+func (l *agentLauncher) Preflight(ctx context.Context, harness domain.ReviewerHarness, workspacePath string, mode ...domain.ReviewerInterfaceMode) error {
 	reviewer, ok := l.reviewers.Reviewer(harness)
 	if !ok {
 		return fmt.Errorf("no reviewer adapter for harness %q", harness)
 	}
-	if profile, ok := reviewer.(ports.ReviewerChatProfile); ok && l.reviewChatSupported(profile) {
+	if profile, ok := reviewer.(ports.ReviewerChatProfile); ok && (len(mode) == 0 || mode[0] != domain.ReviewerInterfaceTUI) && l.reviewChatSupported(profile) {
 		return l.chat.PreflightReviewChat(ctx, profile.ReviewChatHarness())
 	}
 	cmd, err := reviewer.ReviewCommand(ctx, ports.ReviewInvocation{WorkspacePath: workspacePath})
@@ -360,7 +371,7 @@ func (l *agentLauncher) prepareInvocation(ctx context.Context, spec LaunchSpec) 
 	}
 	systemPath := filepath.Join(promptRoot, "system.md")
 	systemPrompt := strings.TrimRight(inv.SystemPrompt, "\n") + "\n\n" +
-		"AO stores each review task in an immutable file. Whenever AO asks you to start a review task, " +
+		"Orchestrator stores each review task in an immutable file. Whenever Orchestrator asks you to start a review task, " +
 		"read the exact file path in that request first and follow it completely.\n"
 	if err := os.WriteFile(systemPath, []byte(systemPrompt), 0o600); err != nil {
 		return ports.ReviewInvocation{}, fmt.Errorf("write reviewer system prompt: %w", err)
@@ -380,14 +391,14 @@ func (l *agentLauncher) prepareIdleInvocation(spec LaunchSpec) (ports.ReviewInvo
 	promptRoot := filepath.Join(l.dataDir, "prompts", string(spec.WorkerID), "reviewer")
 	systemPath := filepath.Join(promptRoot, "system.md")
 	systemPrompt := reviewSystemPrompt() + "\n\n" +
-		"AO may restore your terminal before a new review task exists. In that state, wait for AO to send a review task file path before reviewing or submitting results.\n"
+		"Orchestrator may restore your terminal before a new review task exists. In that state, wait for Orchestrator to send a review task file path before reviewing or submitting results.\n"
 	if err := os.MkdirAll(promptRoot, 0o700); err != nil {
 		return ports.ReviewInvocation{}, fmt.Errorf("create reviewer prompt directory: %w", err)
 	}
 	if err := os.WriteFile(systemPath, []byte(systemPrompt), 0o600); err != nil {
 		return ports.ReviewInvocation{}, fmt.Errorf("write reviewer system prompt: %w", err)
 	}
-	prompt := fmt.Sprintf("Reviewer terminal restored for worker session %s.\n\n%s\n\nWait for AO to send the next review task file path before submitting a new review.", spec.WorkerID, previousReviewHistoryText(spec.PreviousRuns))
+	prompt := fmt.Sprintf("Reviewer terminal restored for worker session %s.\n\n%s\n\nWait for Orchestrator to send the next review task file path before submitting a new review.", spec.WorkerID, previousReviewHistoryText(spec.PreviousRuns))
 	return ports.ReviewInvocation{
 		ReviewerID:       reviewerHandleID(spec.WorkerID),
 		WorkerSessionID:  spec.WorkerID,
@@ -449,7 +460,7 @@ func (l *agentLauncher) Spawn(ctx context.Context, spec LaunchSpec) (LaunchResul
 		return LaunchResult{}, err
 	}
 	if reviewer, ok := l.reviewers.Reviewer(spec.Harness); ok {
-		if profile, ok := reviewer.(ports.ReviewerChatProfile); ok && l.reviewChatSupported(profile) {
+		if profile, ok := reviewer.(ports.ReviewerChatProfile); ok && spec.InterfaceMode != domain.ReviewerInterfaceTUI && l.reviewChatSupported(profile) {
 			return l.startReviewerChat(ctx, spec, inv, profile, false)
 		}
 	}
@@ -466,7 +477,7 @@ func (l *agentLauncher) RestoreTerminal(ctx context.Context, spec LaunchSpec) (L
 		return LaunchResult{}, err
 	}
 	if reviewer, ok := l.reviewers.Reviewer(spec.Harness); ok {
-		if profile, ok := reviewer.(ports.ReviewerChatProfile); ok && l.reviewChatSupported(profile) {
+		if profile, ok := reviewer.(ports.ReviewerChatProfile); ok && spec.InterfaceMode != domain.ReviewerInterfaceTUI && l.reviewChatSupported(profile) {
 			return l.startReviewerChat(ctx, spec, inv, profile, true)
 		}
 	}
@@ -482,14 +493,18 @@ func (l *agentLauncher) startReviewerChat(ctx context.Context, spec LaunchSpec, 
 	if providerID == "" {
 		providerID = strings.TrimSpace(spec.AgentSessionID)
 	}
-	start := ReviewerChatStart{ReviewID: spec.ReviewSessionID, WorkerID: spec.WorkerID, ProjectID: spec.ProjectID, Harness: profile.ReviewChatHarness(), DataDir: l.dataDir, WorkspacePath: spec.WorkspacePath, Env: l.runtimeEnv(ctx, spec, nil, nil), Prompt: inv.Prompt, SystemPrompt: string(systemPrompt), ProviderConversationID: providerID}
+	prompt := inv.Prompt
+	if spec.DeferInitialMessage {
+		prompt = ""
+	}
+	start := ReviewerChatStart{BatchID: spec.BatchID, ReviewID: spec.ReviewSessionID, WorkerID: spec.WorkerID, ProjectID: spec.ProjectID, Harness: profile.ReviewChatHarness(), Model: spec.AgentConfig.Model, Effort: spec.AgentConfig.Effort, DataDir: l.dataDir, WorkspacePath: spec.WorkspacePath, Env: l.runtimeEnv(ctx, spec, nil, nil), Prompt: prompt, SystemPrompt: string(systemPrompt), ProviderConversationID: providerID}
 	if restore {
 		providerID, err = l.chat.RestoreReviewChat(ctx, start)
 	} else {
 		providerID, err = l.chat.StartReviewChat(ctx, start)
 	}
 	if err != nil {
-		return LaunchResult{}, err
+		return LaunchResult{}, agentlaunch.RedactError(err, spec.ProjectEnv)
 	}
 	return LaunchResult{HandleID: reviewerChatHandlePrefix + spec.ReviewSessionID, LaunchID: strings.TrimSpace(spec.LaunchID), AgentSessionID: providerID}, nil
 }
@@ -498,6 +513,11 @@ func (l *agentLauncher) launchReviewerTerminalWithMode(ctx context.Context, spec
 	reviewer, ok := l.reviewers.Reviewer(spec.Harness)
 	if !ok {
 		return LaunchResult{}, fmt.Errorf("no reviewer adapter for harness %q", spec.Harness)
+	}
+	// Some adapters deliver the task in argv rather than InitialMessage.
+	// A replacement must start idle regardless of the delivery strategy.
+	if spec.DeferInitialMessage {
+		inv.Prompt = ""
 	}
 	if pl, ok := reviewer.(preLaunchReviewer); ok {
 		if err := pl.PreLaunch(ctx, inv); err != nil {
@@ -547,7 +567,7 @@ func (l *agentLauncher) launchReviewerTerminalWithMode(ctx context.Context, spec
 	if strings.TrimSpace(spec.LaunchID) != "" {
 		executable, resolveErr := l.executable()
 		if resolveErr != nil {
-			return LaunchResult{}, fmt.Errorf("resolve AO executable: %w", resolveErr)
+			return LaunchResult{}, fmt.Errorf("resolve Orchestrator executable: %w", resolveErr)
 		}
 		env[sessionmanager.EnvSupervisedProcess] = "1"
 		supervisorArgv := []string{executable, "agent-process", "supervise", "--session", handleID}
@@ -564,9 +584,9 @@ func (l *agentLauncher) launchReviewerTerminalWithMode(ctx context.Context, spec
 		Env:           env,
 	})
 	if err != nil {
-		return LaunchResult{}, fmt.Errorf("reviewer runtime: %w", err)
+		return LaunchResult{}, fmt.Errorf("reviewer runtime: %w", agentlaunch.RedactError(err, spec.ProjectEnv))
 	}
-	if cmd.InitialMessage != "" {
+	if cmd.InitialMessage != "" && !spec.DeferInitialMessage {
 		if err := l.waitForPromptReadiness(ctx, reviewer, handle); err != nil {
 			return LaunchResult{}, fmt.Errorf("reviewer prompt readiness: %w", err)
 		}
@@ -642,10 +662,7 @@ func outputContainsAny(output string, patterns []string) bool {
 }
 
 func (l *agentLauncher) runtimeEnv(ctx context.Context, spec LaunchSpec, argv []string, base map[string]string) map[string]string {
-	env := make(map[string]string, len(base)+3)
-	for k, v := range base {
-		env[k] = v
-	}
+	env := agentlaunch.MergeEnv(spec.ProjectEnv, base)
 	delete(env, sessionmanager.EnvSessionID)
 	env["AO_REVIEW_SESSION_ID"] = spec.ReviewSessionID
 	env["AO_REVIEW_WORKER_SESSION_ID"] = string(spec.WorkerID)
@@ -655,6 +672,16 @@ func (l *agentLauncher) runtimeEnv(ctx context.Context, spec LaunchSpec, argv []
 	}
 	env[sessionmanager.EnvProjectID] = string(spec.ProjectID)
 	env[sessionmanager.EnvDataDir] = l.dataDir
+	// A reviewer inherits the daemon's environment, which holds every AO-saved
+	// provider key. Hold back the ones this harness's sessions never receive,
+	// as a worker would, unless the project sets them itself.
+	if strings.TrimSpace(l.dataDir) != "" {
+		for key, value := range providerkeys.Withheld(l.dataDir, string(spec.Harness)) {
+			if _, set := spec.ProjectEnv[key]; !set {
+				env[key] = value
+			}
+		}
+	}
 	if strings.TrimSpace(l.runFile) != "" {
 		env[EnvRunFile] = l.runFile
 	}
@@ -670,39 +697,48 @@ func (l *agentLauncher) runtimeEnv(ctx context.Context, spec LaunchSpec, argv []
 		env["PATH"] = prependPathDir(shimDir, env["PATH"])
 		pinnedDir = shimDir
 	} else {
-		env[EnvAOCommandWarning] = fmt.Sprintf("PATH pin failed: %v; AO shim fallback failed: %v", err, shimErr)
+		env[EnvAOCommandWarning] = fmt.Sprintf("PATH pin failed: %v; Orchestrator shim fallback failed: %v", err, shimErr)
 	}
 	sessionmanager.AugmentRuntimePATHForLaunchBinary(ctx, env, argv, exec.LookPath, pinnedDir)
+	if pinnedDir != "" {
+		loginEnv, err := agentlaunch.LoginShellEnv(env["PATH"], os.Getenv, env, l.dataDir)
+		if err != nil {
+			env[EnvAOCommandWarning] = fmt.Sprintf("login-shell PATH pin failed: %v", err)
+		}
+		for key, value := range loginEnv {
+			env[key] = value
+		}
+	}
 	return env
 }
 
 func (l *agentLauncher) ensureAOShimDir() (string, error) {
 	if strings.TrimSpace(l.dataDir) == "" {
-		return "", fmt.Errorf("reviewer AO shim data directory is required")
+		return "", fmt.Errorf("reviewer Orchestrator shim data directory is required")
 	}
 	exe, err := l.executable()
 	if err != nil {
-		return "", fmt.Errorf("resolve AO executable: %w", err)
+		return "", fmt.Errorf("resolve Orchestrator executable: %w", err)
 	}
 	if !filepath.IsAbs(exe) {
 		exe, err = filepath.Abs(exe)
 		if err != nil {
-			return "", fmt.Errorf("make AO executable absolute: %w", err)
+			return "", fmt.Errorf("make Orchestrator executable absolute: %w", err)
 		}
 	}
 	shimDir := filepath.Join(l.dataDir, "reviewer-runtime", "bin")
 	if err := os.MkdirAll(shimDir, 0o700); err != nil {
-		return "", fmt.Errorf("create reviewer AO shim directory: %w", err)
+		return "", fmt.Errorf("create reviewer Orchestrator shim directory: %w", err)
 	}
 	shimPath := filepath.Join(shimDir, "ao")
 	if runtime.GOOS == "windows" {
 		shimPath += ".cmd"
 	}
 	if err := os.WriteFile(shimPath, []byte(aoShimScript(exe)), 0o600); err != nil {
-		return "", fmt.Errorf("write reviewer AO shim: %w", err)
+		return "", fmt.Errorf("write reviewer Orchestrator shim: %w", err)
 	}
 	if err := os.Chmod(shimPath, 0o700); err != nil { // #nosec G302 -- the reviewer shim must be executable by the AO user.
-		return "", fmt.Errorf("mark reviewer AO shim executable: %w", err)
+		return "", fmt.Errorf("mark reviewer Orchestrator shim executable: %w", err)
 	}
 	return shimDir, nil
 }
@@ -739,7 +775,7 @@ func (l *agentLauncher) Notify(ctx context.Context, handleID string, spec Launch
 		return fmt.Errorf("reviewer message: %w", err)
 	}
 	if reviewID, ok := reviewerChatID(handleID); ok && l.chat != nil {
-		return l.chat.SendReviewChat(ctx, reviewID, msg)
+		return l.chat.SendReviewChat(ctx, reviewID, msg, spec.BatchID)
 	}
 	if err := l.runtime.SendMessage(ctx, ports.RuntimeHandle{ID: handleID}, msg); err != nil {
 		return fmt.Errorf("notify reviewer: %w", err)
@@ -791,6 +827,8 @@ func (l *agentLauncher) Cancel(ctx context.Context, handleID string, harness dom
 		return nil
 	}
 	if reviewID, ok := reviewerChatID(handleID); ok && l.chat != nil {
+		// Stop review cancels the turn, just like Stop in the Chat composer.
+		// Keep the controller and conversation usable; Archive owns teardown.
 		return l.chat.InterruptReviewChat(ctx, reviewID)
 	}
 	reviewer, ok := l.reviewers.Reviewer(harness)
@@ -876,4 +914,12 @@ func (l *agentLauncher) Destroy(ctx context.Context, handleID string) error {
 func reviewerChatID(handleID string) (string, bool) {
 	id, ok := strings.CutPrefix(handleID, reviewerChatHandlePrefix)
 	return id, ok && strings.TrimSpace(id) != ""
+}
+
+// BatchMessageID ties a dispatched reviewer Chat turn to its durable review runs.
+func BatchMessageID(batchID string) string {
+	if batchID == "" {
+		return ""
+	}
+	return "review-batch:" + batchID
 }
