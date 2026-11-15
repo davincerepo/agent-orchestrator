@@ -1,6 +1,10 @@
 import { useRouter } from "expo-router";
+import { useState } from "react";
+import { Alert } from "react-native";
 
 import { unconfiguredView } from "./configLoading";
+import { useCloud } from "./cloud/CloudProvider";
+import { cloudErrorMessage } from "./cloud/errors";
 import { useApp } from "./store";
 import { Button, EmptyState } from "./ui";
 
@@ -20,7 +24,19 @@ import { Button, EmptyState } from "./ui";
  */
 export function UnpairedState() {
 	const router = useRouter();
-	const { configResolved } = useApp();
+	const { selectedHostName, loading, reloadConfig, configResolved } = useApp();
+	if (selectedHostName) {
+		const connecting = loading || !configResolved;
+		return (
+			<EmptyState
+				icon="server"
+				pulse={connecting}
+				title={connecting ? `Connecting to ${selectedHostName}` : `${selectedHostName} is unavailable`}
+				message={connecting ? "Checking saved addresses…" : "This machine is paired but cannot be reached right now."}
+				action={connecting ? undefined : <Button title="Retry connection" icon="refresh-cw" onPress={() => { void reloadConfig(); }} />}
+			/>
+		);
+	}
 	// On launch the store has no config until the endpoint race finishes, which
 	// on a slow network takes seconds. Offering the scanner during that window
 	// told a paired user their phone had forgotten the desktop, moments before it
@@ -30,15 +46,42 @@ export function UnpairedState() {
 			<EmptyState
 				icon="monitor-smartphone"
 				pulse
-				title="Connecting to your desktop…"
+				title="Connecting to your machine…"
 			/>
 		);
 	}
 	return (
 		<EmptyState
 			icon="monitor-smartphone"
-			title="No desktop paired"
-			action={<Button title="Scan pairing code" icon="maximize" onPress={() => router.push("/pair")} />}
+			title="No machine paired"
+			message="Pair the computer running Orchestrator, or sign in to run agents in Orchestrator Cloud."
+			action={[
+				<Button key="pair" title="Scan pairing code" icon="qrScanner" onPress={() => router.push("/pair")} />,
+				<SignInButton key="sign-in" />,
+			]}
+		/>
+	);
+}
+
+/**
+ * The account's sign-in, as onboarding offers it: Orchestrator Cloud's
+ * workers and projects, and any machines linked to the account, fill the
+ * board once it lands.
+ */
+function SignInButton() {
+	const { signIn, status } = useCloud();
+	const [busy, setBusy] = useState(false);
+	// Signed in already (Cloud still answering, or unavailable): nothing to offer.
+	if (status !== "signed-out") return null;
+	return (
+		<Button
+			title="Sign in"
+			variant="ghost"
+			loading={busy}
+			onPress={() => {
+				setBusy(true);
+				void signIn().catch((error) => Alert.alert("Couldn't sign in", cloudErrorMessage(error))).finally(() => setBusy(false));
+			}}
 		/>
 	);
 }

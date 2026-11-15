@@ -1,20 +1,26 @@
+import type { PROpener } from "@aoagents/product-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import type { components } from "../../api/schema";
 import { apiClient } from "../lib/api-client";
+import { clientForHost } from "../lib/host-clients";
+import { LOCAL_HOST } from "../lib/hosts";
+import { noPRDetails } from "../lib/pr-display";
 import type { CloudCpPullRequestSummary } from "../lib/cloud-cp";
 import { createRendererCloudCpClient } from "../lib/cloud-cp/renderer-client";
-import { subscribeSessionEventsBridged } from "../lib/cloud-cp/stream-bridge";
+import { useCloudSessionEventListener } from "./useCloudSessionEvents";
 import { useSettings } from "./useSettings";
 
-export type SessionPRSummary = components["schemas"]["SessionPRSummary"];
+// openedBy only comes from AO Cloud, which names the person behind a PR its
+// GitHub App opened for them.
+export type SessionPRSummary = components["schemas"]["SessionPRSummary"] & { openedBy?: PROpener };
 export type SessionPRReference = components["schemas"]["SessionPRReference"];
 
-export const sessionScmSummaryQueryKey = (sessionId?: string) =>
-	sessionId ? (["session-scm-summary", sessionId] as const) : (["session-scm-summary"] as const);
+export const sessionScmSummaryQueryKey = (sessionId?: string, hostId?: string) =>
+	sessionId ? (["session-scm-summary", hostId ?? LOCAL_HOST, sessionId] as const) : (["session-scm-summary"] as const);
 
-export async function fetchSessionScmSummary(sessionId: string) {
-	const { data, error } = await apiClient.GET("/api/v1/sessions/{sessionId}/pr", {
+export async function fetchSessionScmSummary(sessionId: string, hostId?: string) {
+	const { data, error } = await (hostId ? clientForHost(hostId) : apiClient).GET("/api/v1/sessions/{sessionId}/pr", {
 		params: { path: { sessionId } },
 	});
 	if (error) throw error;
@@ -26,10 +32,11 @@ export function cloudPRSummaryToSessionPRSummary(
 	autoInjectCI: boolean,
 ): SessionPRSummary {
 	return {
+		...noPRDetails(),
 		...pr,
 		provider: pr.provider === "gitlab" ? "gitlab" : "github",
 		repo: pr.repository,
-		ci: { ...pr.ci, autoInjectCI },
+		ci: { ...pr.ci, checks: [], autoInjectCI },
 		review: pr.review,
 		mergeability: {
 			...pr.mergeability,
@@ -38,12 +45,13 @@ export function cloudPRSummaryToSessionPRSummary(
 	};
 }
 
-export function sessionScmSummaryQueryOptions(sessionId: string) {
+export function sessionScmSummaryQueryOptions(sessionId: string, hostId?: string) {
 	return {
-		queryKey: sessionScmSummaryQueryKey(sessionId),
+		queryKey: sessionScmSummaryQueryKey(sessionId, hostId),
 		enabled: Boolean(sessionId),
-		queryFn: () => fetchSessionScmSummary(sessionId),
+		queryFn: () => fetchSessionScmSummary(sessionId, hostId),
 		retry: 1,
+		...(hostId ? { refetchInterval: 15_000 } : {}),
 	};
 }
 
@@ -52,8 +60,9 @@ export function useSessionScmSummary(
 	enabled = true,
 	cloudOrgId?: string,
 	cloudAutoInjectCI = false,
+	hostId?: string,
 ) {
-	const { settings } = useSettings();
+	const { settings } = useSettings(undefined, Boolean(cloudOrgId));
 	const baseUrl = settings?.cloudControlPlaneUrl ?? "";
 	const cloudClient = useMemo(() => createRendererCloudCpClient(baseUrl), [baseUrl]);
 	const cloud = Boolean(cloudOrgId);
@@ -61,40 +70,39 @@ export function useSessionScmSummary(
 	const queryKey = useMemo(
 		() => cloud
 			? ["cloud-session-scm-summary", baseUrl, cloudOrgId, sessionId] as const
-			: sessionScmSummaryQueryKey(sessionId),
-		[baseUrl, cloud, cloudOrgId, sessionId],
+			: sessionScmSummaryQueryKey(sessionId, hostId),
+		[baseUrl, cloud, cloudOrgId, hostId, sessionId],
 	);
-	useEffect(() => {
-		if (!enabled || !cloudOrgId || !sessionId || baseUrl === "") return;
-		const controller = new AbortController();
-		void subscribeSessionEventsBridged({
-			baseUrl,
-			orgId: cloudOrgId,
-			sessionId,
-			signal: controller.signal,
-			onEvent: (event) => {
-				if (
-					event.type === "scm.updated" ||
-					event.type === "pull_request.created" ||
-					event.type === "pull_request.claimed"
-				) {
-					void queryClient.invalidateQueries({ queryKey });
-				}
-			},
-		});
-		return () => controller.abort();
-	}, [baseUrl, cloudOrgId, enabled, queryClient, queryKey, sessionId]);
+	// The session's shared event stream says when its pull requests change.
+	useCloudSessionEventListener({
+		baseUrl,
+		orgId: cloudOrgId,
+		sessionId,
+		enabled,
+		onEvent: (event) => {
+			if (
+				event.type === "scm.updated" ||
+				event.type === "pull_request.created" ||
+				event.type === "pull_request.claimed"
+			) {
+				void queryClient.invalidateQueries({ queryKey });
+			}
+		},
+	});
 	return useQuery({
 		queryKey,
 		enabled: enabled && Boolean(sessionId) && (!cloud || baseUrl !== ""),
 		queryFn: async () => {
-			if (!cloudOrgId) return fetchSessionScmSummary(sessionId!);
+			if (!cloudOrgId) return fetchSessionScmSummary(sessionId!, hostId);
 			const response = await cloudClient.listSessionPullRequests(cloudOrgId, sessionId!);
 			return {
 				prs: response.pullRequests.map((pr) => cloudPRSummaryToSessionPRSummary(pr, cloudAutoInjectCI)),
-				linkedPrs: [],
+				linkedPrs: (response.linkedPullRequests ?? []).map((pr): SessionPRReference => ({
+					host: "github.com", number: pr.number, provider: "github", repo: pr.repository, url: pr.url,
+				})),
 			};
 		},
 		retry: 1,
+		...(hostId ? { refetchInterval: 15_000 } : {}),
 	});
 }
