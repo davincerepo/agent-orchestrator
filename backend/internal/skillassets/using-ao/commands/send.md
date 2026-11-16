@@ -7,6 +7,8 @@ running turn, the message is queued and delivered as its own turn after the
 current turn ends; it does not reach the running turn. To correct or redirect
 an agent mid-turn, use `--steer`.
 
+Messages are limited to 1 MiB of UTF-8 text (including the sender prefix); for larger content, write it to a file accessible to the recipient and send the file path.
+
 ## Syntax
 
 ```

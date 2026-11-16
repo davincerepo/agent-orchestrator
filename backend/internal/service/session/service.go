@@ -398,6 +398,9 @@ func (s *Service) SetUsageArchiveFlush(flush func(context.Context)) {
 // Spawn creates a session and returns the API-facing read model plus
 // ephemeral prompt size measurements.
 func (s *Service) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Session, int, int, error) {
+	if err := s.checkDispatchProject(ctx, cfg.ProjectID); err != nil {
+		return domain.Session{}, 0, 0, err
+	}
 	if rec, found, err := s.replayClientRequest(ctx, cfg.ClientRequestID, cfg.ClientRequestHash); err != nil {
 		return domain.Session{}, 0, 0, err
 	} else if found {
@@ -1421,11 +1424,17 @@ func (s *Service) RollbackSpawn(ctx context.Context, id domain.SessionID) (Rollb
 // optional inline image (e.g. a browser-annotation snapshot) written into the
 // session worktree and referenced from the delivered message.
 func (s *Service) Send(ctx context.Context, id domain.SessionID, message string, attachment *ports.SpawnAttachment) error {
+	if err := s.checkDispatchSession(ctx, id); err != nil {
+		return err
+	}
 	return toAPIError(s.manager.Send(ctx, id, message, attachment))
 }
 
 // SendWithOptions preserves authorship facts supplied by trusted UI surfaces.
 func (s *Service) SendWithOptions(ctx context.Context, id domain.SessionID, message string, attachment *ports.SpawnAttachment, options ports.MessageDeliveryOptions) error {
+	if err := s.checkDispatchSession(ctx, id); err != nil {
+		return err
+	}
 	return toAPIError(s.manager.SendWithOptions(ctx, id, message, attachment, options))
 }
 

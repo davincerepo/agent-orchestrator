@@ -71,6 +71,9 @@ func (s *Service) CancelTaskPreparation(ctx context.Context, token string) error
 // provisional display name derived from the task brief. Git tasks finalize
 // title and workspace names during provisioning; Scratch titles refine after spawn.
 func (s *Service) DelegateTask(ctx context.Context, in DelegateTaskInput) (DelegateTaskOutcome, error) {
+	if err := s.checkDispatchProject(ctx, in.ProjectID); err != nil {
+		return DelegateTaskOutcome{}, err
+	}
 	if rec, found, err := s.replayClientRequest(ctx, in.ClientRequestID, in.ClientRequestHash); err != nil {
 		return DelegateTaskOutcome{}, err
 	} else if found {

@@ -47,7 +47,7 @@ import (
 
 const (
 	maxPromptLen      = 100 << 10
-	maxMessageLen     = 4096
+	maxMessageLen     = 1 << 20
 	maxModelLen       = 256
 	maxDisplayNameLen = 100
 	maxIdempotencyKey = 128
@@ -397,7 +397,7 @@ func (c *SessionsController) spawn(w http.ResponseWriter, r *http.Request) {
 	}
 	// A standalone worker has no project to start in the background.
 	async := in.Async && in.ProjectID != ""
-	sess, promptBytes, systemPromptBytes, err := c.Svc.Spawn(r.Context(), ports.SpawnConfig{ProjectID: in.ProjectID, IssueID: in.IssueID, ParentSessionID: in.ParentSessionID, TrackerProvider: in.TrackerProvider, Kind: in.Kind, Harness: in.Harness, Branch: in.Branch, BaseBranch: strings.TrimSpace(in.BaseBranch), RequestedMode: in.Mode, Prompt: in.Prompt, RequestedOutput: in.RequestedOutput, DisplayName: displayName, DisplayNameExplicit: in.DisplayNameExplicit && displayName != "", Attachments: attachments, AgentConfig: ports.AgentConfig{Model: in.Model, Effort: in.Effort, Permissions: in.ApprovalMode}, EffortOverride: strings.TrimSpace(in.Effort) != "", AgentAccountID: strings.TrimSpace(in.AccountID), ClientRequestID: in.ClientRequestID, ClientRequestHash: requestHash, Async: async})
+	sess, promptBytes, systemPromptBytes, err := c.Svc.Spawn(sessionsvc.WithCallerSession(r.Context(), in.CallerSessionID), ports.SpawnConfig{ProjectID: in.ProjectID, IssueID: in.IssueID, ParentSessionID: in.ParentSessionID, TrackerProvider: in.TrackerProvider, Kind: in.Kind, Harness: in.Harness, Branch: in.Branch, BaseBranch: strings.TrimSpace(in.BaseBranch), RequestedMode: in.Mode, Prompt: in.Prompt, RequestedOutput: in.RequestedOutput, DisplayName: displayName, DisplayNameExplicit: in.DisplayNameExplicit && displayName != "", Attachments: attachments, AgentConfig: ports.AgentConfig{Model: in.Model, Effort: in.Effort, Permissions: in.ApprovalMode}, EffortOverride: strings.TrimSpace(in.Effort) != "", AgentAccountID: strings.TrimSpace(in.AccountID), ClientRequestID: in.ClientRequestID, ClientRequestHash: requestHash, Async: async})
 	if err != nil {
 		envelope.WriteError(w, r, err)
 		return
@@ -2242,8 +2242,7 @@ func (c *SessionsController) send(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "MESSAGE_REQUIRED", "Message is required", nil)
 		return
 	}
-	if len(in.Message) > maxMessageLen {
-		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "MESSAGE_TOO_LONG", "Message is too long", nil)
+	if !validateMessageLength(w, r, in.Message) {
 		return
 	}
 	var attachment *ports.SpawnAttachment
@@ -2263,9 +2262,9 @@ func (c *SessionsController) send(w http.ResponseWriter, r *http.Request) {
 			apispec.NotImplemented(w, r, "POST", "/api/v1/sessions/{sessionId}/send")
 			return
 		}
-		err = sender.SendWithOptions(r.Context(), sessionID(r), message, attachment, ports.MessageDeliveryOptions{AuthoredByUser: in.UserAuthored, SenderSessionID: in.SenderSessionID})
+		err = sender.SendWithOptions(sessionsvc.WithCallerSession(r.Context(), in.CallerSessionID), sessionID(r), message, attachment, ports.MessageDeliveryOptions{AuthoredByUser: in.UserAuthored, SenderSessionID: in.SenderSessionID})
 	} else {
-		err = c.Svc.Send(r.Context(), sessionID(r), message, attachment)
+		err = c.Svc.Send(sessionsvc.WithCallerSession(r.Context(), in.CallerSessionID), sessionID(r), message, attachment)
 	}
 	if err != nil {
 		envelope.WriteError(w, r, err)
@@ -2330,7 +2329,7 @@ func (c *SessionsController) delegateTask(w http.ResponseWriter, r *http.Request
 		requestHash = clientRequestFingerprint("delegate", keyless, attachments)
 	}
 
-	out, err := c.Svc.DelegateTask(r.Context(), sessionsvc.DelegateTaskInput{
+	out, err := c.Svc.DelegateTask(sessionsvc.WithCallerSession(r.Context(), in.CallerSessionID), sessionsvc.DelegateTaskInput{
 		ClientRequestID:   in.ClientRequestID,
 		ClientRequestHash: requestHash,
 		ProjectID:         in.ProjectID,

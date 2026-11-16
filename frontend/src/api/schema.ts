@@ -6978,6 +6978,8 @@ export interface components {
             baseBranch?: string;
             branch?: string;
             brief: string;
+            /** @description Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication. */
+            callerSessionId?: string;
             clientRequestId?: string;
             effort?: null | string;
             /** @enum {string} */
@@ -8118,6 +8120,9 @@ export interface components {
         };
         SendSessionMessageRequest: {
             attachment?: components["schemas"]["AttachmentInput"];
+            /** @description Calling AO agent session. When supplied, dispatch is limited to its project. Omitted for human requests; message text is never used as caller identity. */
+            callerSessionId?: string;
+            /** @description Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix. */
             message: string;
             senderSessionId?: string;
             userAuthored?: boolean;
@@ -8921,6 +8926,8 @@ export interface components {
             attachments?: components["schemas"]["AttachmentInput"][];
             baseBranch?: string;
             branch?: string;
+            /** @description Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication. */
+            callerSessionId?: string;
             clientRequestId?: string;
             displayName?: string;
             displayNameExplicit?: boolean;
@@ -9026,9 +9033,12 @@ export interface components {
         };
         SteerConversationRequest: {
             attachments?: components["schemas"]["ConversationImageContentRequest"][];
+            /** @description Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication. */
+            callerSessionId?: string;
             clientMessageId?: string;
             recoverOnly?: boolean;
             senderSessionId?: string;
+            /** @description Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix. */
             text: string;
         };
         SteerConversationResponse: {

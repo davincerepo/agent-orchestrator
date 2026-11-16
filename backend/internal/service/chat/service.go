@@ -15,6 +15,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/dispatchscope"
 	reportsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/report"
 )
 
@@ -1376,6 +1377,9 @@ func (s *Service) PreservesProviderOnRestart(sessionID domain.SessionID) bool {
 // requireChatSession reads the persisted mode and refuses anything that is not a
 // Chat session. Dispatch is decided by durable state, never by the caller.
 func (s *Service) requireChatSession(ctx context.Context, id domain.SessionID) (domain.SessionRecord, error) {
+	if err := dispatchscope.CheckSession(ctx, s.sessions, id); err != nil {
+		return domain.SessionRecord{}, err
+	}
 	record, found, err := s.sessions.GetSession(ctx, id)
 	if err != nil {
 		return domain.SessionRecord{}, fmt.Errorf("read session %s: %w", id, err)

@@ -20312,6 +20312,11 @@ components:
         brief:
           maxLength: 102400
           type: string
+        callerSessionId:
+          description: Calling AO agent session. Dispatch is limited to its project.
+            Omitted for human requests; context, not authentication.
+          maxLength: 128
+          type: string
         clientRequestId:
           maxLength: 128
           type: string
@@ -23242,8 +23247,15 @@ components:
       properties:
         attachment:
           $ref: '#/components/schemas/AttachmentInput'
+        callerSessionId:
+          description: Calling AO agent session. When supplied, dispatch is limited
+            to its project. Omitted for human requests; message text is never used
+            as caller identity.
+          maxLength: 128
+          type: string
         message:
-          maxLength: 4096
+          description: Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix.
+          maxLength: 1.048576e+06
           minLength: 1
           type: string
         senderSessionId:
@@ -25268,6 +25280,11 @@ components:
           type: string
         branch:
           type: string
+        callerSessionId:
+          description: Calling AO agent session. Dispatch is limited to its project.
+            Omitted for human requests; context, not authentication.
+          maxLength: 128
+          type: string
         clientRequestId:
           maxLength: 128
           type: string
@@ -25574,6 +25591,11 @@ components:
           items:
             $ref: '#/components/schemas/ConversationImageContentRequest'
           type: array
+        callerSessionId:
+          description: Calling AO agent session. Dispatch is limited to its project.
+            Omitted for human requests; context, not authentication.
+          maxLength: 128
+          type: string
         clientMessageId:
           type: string
         recoverOnly:
@@ -25581,6 +25603,8 @@ components:
         senderSessionId:
           type: string
         text:
+          description: Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix.
+          maxLength: 1.048576e+06
           type: string
       required:
       - text

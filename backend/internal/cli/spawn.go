@@ -45,6 +45,7 @@ type spawnOptions struct {
 // spawnRequest mirrors the daemon's SpawnSessionRequest body for
 // POST /api/v1/sessions. The CLI keeps its own copy so it need not import httpd.
 type spawnRequest struct {
+	CallerSessionID     string `json:"callerSessionId,omitempty"`
 	ProjectID           string `json:"projectId,omitempty"`
 	IssueID             string `json:"issueId,omitempty"`
 	ParentSessionID     string `json:"parentSessionId,omitempty"`
@@ -145,14 +146,21 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 			}
 			opts.trackerProvider = tp
 
+			caller, ownProject, err := ctx.callerProject(cmd.Context())
+			if err != nil {
+				return err
+			}
 			var project projectDetails
-			var err error
 			if !opts.standalone {
-				project, err = ctx.resolveSpawnProject(cmd.Context(), opts.project)
+				project, err = ctx.resolveDispatchProject(cmd.Context(), opts.project, caller, ownProject)
 				if err != nil {
 					return err
 				}
 				opts.project = project.ID
+			}
+
+			if err := checkCallerProject(caller, ownProject, project.ID); err != nil {
+				return err
 			}
 
 			harness, err := resolveSpawnHarness(opts.harness, opts.kind, project)
@@ -186,6 +194,7 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 				}
 			}
 			req := spawnRequest{
+				CallerSessionID:     caller,
 				ProjectID:           opts.project,
 				IssueID:             opts.issue,
 				ParentSessionID:     strings.TrimSpace(os.Getenv("AO_SESSION_ID")),

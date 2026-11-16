@@ -674,7 +674,8 @@ type SessionArchiveSummary struct {
 
 // SpawnSessionRequest is the body of POST /api/v1/sessions.
 type SpawnSessionRequest struct {
-	ClientRequestID string `json:"clientRequestId,omitempty" maxLength:"128"`
+	CallerSessionID domain.SessionID `json:"callerSessionId,omitempty" maxLength:"128" description:"Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication."`
+	ClientRequestID string           `json:"clientRequestId,omitempty" maxLength:"128"`
 	// ProjectID is omitted for a standalone worker session.
 	ProjectID domain.ProjectID `json:"projectId,omitempty"`
 	IssueID   domain.IssueID   `json:"issueId,omitempty"`
@@ -1454,9 +1455,10 @@ type CleanupSessionsResponse struct {
 
 // SendSessionMessageRequest is the body of POST /api/v1/sessions/{sessionId}/send.
 type SendSessionMessageRequest struct {
+	CallerSessionID domain.SessionID `json:"callerSessionId,omitempty" maxLength:"128" description:"Calling AO agent session. When supplied, dispatch is limited to its project. Omitted for human requests; message text is never used as caller identity."`
+	Message         string           `json:"message" minLength:"1" maxLength:"1048576" description:"Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix."`
 	// SenderSessionID is cooperative loopback attribution, not authentication.
 	SenderSessionID string `json:"senderSessionId,omitempty"`
-	Message         string `json:"message" minLength:"1" maxLength:"4096"`
 	// UserAuthored marks content written directly by the user but delivered via
 	// AO's automation relay, such as inline document feedback.
 	UserAuthored bool `json:"userAuthored,omitempty"`
@@ -1476,6 +1478,7 @@ type SendSessionMessageResponse struct {
 // DelegateTaskRequest is the body of POST /api/v1/orchestrators/delegate.
 // An omitted agent tells the orchestrator to use the project's worker default.
 type DelegateTaskRequest struct {
+	CallerSessionID domain.SessionID `json:"callerSessionId,omitempty" maxLength:"128" description:"Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication."`
 	ClientRequestID string           `json:"clientRequestId,omitempty" maxLength:"128"`
 	ProjectID       domain.ProjectID `json:"projectId"`
 	Brief           string           `json:"brief" maxLength:"102400"`
@@ -3496,8 +3499,9 @@ type SendConversationMessageResponse struct {
 
 // SteerConversationRequest is guidance for a turn that is already running.
 type SteerConversationRequest struct {
+	CallerSessionID domain.SessionID `json:"callerSessionId,omitempty" maxLength:"128" description:"Calling AO agent session. Dispatch is limited to its project. Omitted for human requests; context, not authentication."`
 	// Text is the correction to hand the agent mid-turn.
-	Text string `json:"text"`
+	Text string `json:"text" maxLength:"1048576" description:"Maximum 1 MiB (1048576 UTF-8 bytes), including any sender prefix."`
 	// SenderSessionID identifies the AO session that authored an automation steer.
 	// It is optional so older callers and in-app human steering remain unchanged.
 	SenderSessionID string `json:"senderSessionId,omitempty"`

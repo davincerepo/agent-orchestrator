@@ -37,6 +37,11 @@ func sendServer(t *testing.T, status int, respBody string) (*httptest.Server, *s
 	t.Helper()
 	capture := &sendCapture{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && (r.URL.Path == "/api/v1/sessions/aa-47" || r.URL.Path == "/api/v1/sessions/demo-1") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"session":{"projectId":"demo"}}`)
+			return
+		}
 		if r.Method != http.MethodPost {
 			http.NotFound(w, r)
 			return
@@ -91,6 +96,11 @@ func TestSend_SteerActiveTurnUsesProviderSteeringWithoutQueueing(t *testing.T) {
 	cfg := setConfigEnv(t)
 	var paths, bodies []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && (r.URL.Path == "/api/v1/sessions/source-2" || r.URL.Path == "/api/v1/sessions/demo-1") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"session":{"projectId":"demo"}}`)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/internal/") {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -618,7 +628,7 @@ func TestSend_NetworkErrorExits1(t *testing.T) {
 }
 
 func TestSendCarriesCooperativeSessionIdentity(t *testing.T) {
-	for _, sender := range []string{"", "project-1"} {
+	for _, sender := range []string{"", "aa-47"} {
 		t.Run("sender="+sender, func(t *testing.T) {
 			t.Setenv("AO_SESSION_ID", sender)
 			cfg := setConfigEnv(t)
@@ -633,7 +643,7 @@ func TestSendCarriesCooperativeSessionIdentity(t *testing.T) {
 			if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 				t.Fatal(err)
 			}
-			if req.SenderSessionID != sender || req.UserAuthored != (sender == "") {
+			if req.CallerSessionID != sender || req.SenderSessionID != sender || req.UserAuthored != (sender == "") {
 				t.Fatalf("request=%+v", req)
 			}
 		})
