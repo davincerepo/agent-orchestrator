@@ -348,7 +348,11 @@ func (d *Driver) Start(ctx context.Context, cfg ports.ChatStartConfig) (ports.Ch
 		return nil, errors.New("thread/start returned no thread id")
 	}
 
-	conv.start(resp.Thread.ID, resp.Model, resp.ReasoningEffort)
+	conv.start(resp.Thread.ID, resp.Model, resp.ReasoningEffort, threadLaunchContext{
+		workdir:     cfg.WorkspacePath,
+		permissions: cfg.Permissions,
+		codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+	})
 	return conv, nil
 }
 
@@ -382,11 +386,15 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		// loaded thread. Host replay bridges output and unresolved server requests
 		// across the daemon detach without waiting for the active turn to settle.
 		conv.readOnly = cfg.ReadOnly
+		conv.start(cfg.ProviderConversationID, cfg.Model, cfg.Effort, threadLaunchContext{
+			workdir:     cfg.WorkspacePath,
+			permissions: cfg.Permissions,
+			codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+		})
 		conv.launchMode = cfg.Permissions
 		// Neither the tier nor the collaboration mode the thread was left on is
 		// known; the next turn states both.
 		conv.tierUnknown, conv.planUnknown = true, true
-		conv.start(cfg.ProviderConversationID, cfg.Model, cfg.Effort)
 		return conv, nil
 	}
 
@@ -441,7 +449,11 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 			_ = conv.Terminate()
 			return nil, fmt.Errorf("%w: start in place of a missing thread: %w", ports.ErrChatResumeFailed, err)
 		}
-		conv.start(started.Thread.ID, started.Model, started.ReasoningEffort)
+		conv.start(started.Thread.ID, started.Model, started.ReasoningEffort, threadLaunchContext{
+			workdir:     cfg.WorkspacePath,
+			permissions: cfg.Permissions,
+			codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+		})
 		return conv, nil
 	}
 	if err != nil {
@@ -451,13 +463,17 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		return nil, fmt.Errorf("%w: %w", ports.ErrChatResumeFailed, err)
 	}
 
+	conv.start(cfg.ProviderConversationID, resp.Model, resp.ReasoningEffort, threadLaunchContext{
+		workdir:     cfg.WorkspacePath,
+		permissions: cfg.Permissions,
+		codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+	})
 	// A tier sticks to the thread. One AO left it on is undone by the first turn
 	// here; one the user configured is theirs, as on a new thread.
 	conv.fastTier = resp.ServiceTier != nil && conv.configuredServiceTier(ctx) == ""
 	// thread/resume does not report the collaboration mode, and Plan sticks to
 	// the thread across a restart, so the next turn states it.
 	conv.planUnknown = true
-	conv.start(cfg.ProviderConversationID, resp.Model, resp.ReasoningEffort)
 	return conv, nil
 }
 
@@ -879,6 +895,10 @@ func (d *Driver) ForkIntoHost(ctx context.Context, sourceProviderConversationID,
 			return nil, fmt.Errorf("record Codex fork: %w", err)
 		}
 	}
-	conv.start(resp.Thread.ID, resp.Model, resp.ReasoningEffort)
+	conv.start(resp.Thread.ID, resp.Model, resp.ReasoningEffort, threadLaunchContext{
+		workdir:     cfg.WorkspacePath,
+		permissions: cfg.Permissions,
+		codexHome:   resolveCodexHomeBestEffort(cfg.Env),
+	})
 	return conv, nil
 }

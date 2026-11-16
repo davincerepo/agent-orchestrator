@@ -907,6 +907,20 @@ func (c chatLauncher) HasLiveChatController(id domain.SessionID) bool {
 	return c.svc.HasLiveChatController(id)
 }
 
+// ReloadChatPrompt delegates the optional prompt-reload capability. Like the
+// handoff methods below, it lives on the wiring adapter because wrapping the
+// concrete Chat service must not erase the capability Session Manager probes
+// for; the assertion fails the build if the two sides drift apart again.
+func (c chatLauncher) ReloadChatPrompt(
+	ctx context.Context,
+	id domain.SessionID,
+	systemPrompt string,
+) (ports.ChatPromptReloadResult, error) {
+	return c.svc.ReloadChatPrompt(ctx, id, systemPrompt)
+}
+
+var _ sessionmanager.ChatPromptReloader = chatLauncher{}
+
 func (c chatLauncher) HibernateChat(ctx context.Context, id domain.SessionID) (bool, error) {
 	return c.svc.HibernateChat(ctx, id)
 }
