@@ -39,12 +39,14 @@ var (
 	ErrForkUnsupported = errors.New("chat driver cannot fork a conversation")
 	// ErrRenameUnsupported reports a provider whose thread carries no title.
 	ErrRenameUnsupported = errors.New("chat driver cannot set a thread title")
+	// ErrTurnRunning refuses a history-altering operation while the agent is
+	// working. Retryable once the turn ends, which is why it is separate from
+	// every other refusal here. The sentinel lives in ports so the session-facing
+	// surface can map it to an API conflict without importing this package.
+	ErrTurnRunning = ports.ErrChatTurnRunning
 	// ErrOrchestratorRename refuses a title for the project orchestrator's
 	// conversation: the orchestrator is never renamed.
 	ErrOrchestratorRename = errors.New("the project orchestrator cannot be renamed")
-	// ErrTurnRunning refuses a rollback while the agent is working. Retryable once
-	// the turn ends, which is why it is separate from every other refusal here.
-	ErrTurnRunning = errors.New("cannot roll back while a turn is running")
 	// ErrTurnNotRollbackable reports a turn the provider never accepted. There is
 	// no provider history to discard, so an undo would only hide AO's own rows and
 	// leave the agent remembering more than the timeline shows.

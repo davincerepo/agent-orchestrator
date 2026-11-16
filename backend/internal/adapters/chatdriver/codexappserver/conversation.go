@@ -59,6 +59,9 @@ type conversation struct {
 	events     chan ports.ChatEvent
 	// Effective defaults returned when Codex opened or resumed this thread.
 	threadModel, threadEffort string
+	// launch records what a replacement thread needs from the launch that
+	// created this conversation. See RefreshStandingPrompt.
+	launch threadLaunchContext
 	// Guarded by sendMu: whether the last turn put the thread on the fast tier
 	// or in plan mode, and each model's fast tier id as last listed.
 	fastTier, planMode bool
@@ -141,11 +144,12 @@ func newConversation(proc *process, log *slog.Logger, providerScopeID string) *c
 // start records the opened thread and begins translating notifications. It is
 // called once, after the thread is open, so no event is emitted for a
 // conversation the caller does not yet have a handle to.
-func (c *conversation) start(threadID, model, effort string) {
+func (c *conversation) start(threadID, model, effort string, launch threadLaunchContext) {
 	c.threadID = threadID
 	c.threadModel = model
 	c.threadEffort = effort
 	c.threadSettingsKnown = model != ""
+	c.launch = launch
 	go c.pump()
 }
 
