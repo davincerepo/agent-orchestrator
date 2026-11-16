@@ -999,6 +999,49 @@ func (s *Store) ListUsageModelAggregates(ctx context.Context, sessionID domain.S
 	return out, nil
 }
 
+// ListProjectSessionHourlyUsage returns per-session hourly UTC token buckets
+// for every session of a project with observed usage, ordered by session num.
+func (s *Store) ListProjectSessionHourlyUsage(ctx context.Context, projectID domain.ProjectID) ([]domain.SessionHourlyUsage, error) {
+	rows, err := s.qr.ListProjectSessionHourlyUsage(ctx, &projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list project session hourly usage for %s: %w", projectID, err)
+	}
+	out := make([]domain.SessionHourlyUsage, 0, len(rows))
+	sessionIdx := -1
+	modelIdx := -1
+	var lastSession domain.SessionID
+	var lastHarness domain.AgentHarness
+	var lastModel string
+	for _, row := range rows {
+		if sessionIdx < 0 || row.SessionID != lastSession {
+			out = append(out, domain.SessionHourlyUsage{
+				SessionID: row.SessionID, Num: row.Num, Kind: row.Kind,
+				IsTerminated: row.IsTerminated, CreatedAt: row.SessionCreatedAt,
+				Incomplete: row.Incomplete != 0,
+			})
+			sessionIdx = len(out) - 1
+			modelIdx = -1
+		}
+		if modelIdx < 0 || row.Harness != lastHarness || row.ModelID != lastModel {
+			out[sessionIdx].Models = append(out[sessionIdx].Models, domain.SessionModelHourlyUsage{
+				Harness: row.Harness, ModelID: row.ModelID,
+			})
+			modelIdx = len(out[sessionIdx].Models) - 1
+		}
+		out[sessionIdx].Models[modelIdx].Buckets = append(out[sessionIdx].Models[modelIdx].Buckets, domain.SessionHourlyUsageBucket{
+			HourUTC: strings.Replace(row.HourUtc, " ", "T", 1),
+			Tokens: domain.UsageTokenMetrics{
+				InputTokens:         int64PtrWhen(row.InputTokens, row.KnownInputTokenCount == row.EventCount),
+				CachedInputTokens:   int64PtrWhen(row.CachedInputTokens, row.KnownCachedInputTokenCount == row.EventCount),
+				UncachedInputTokens: int64PtrWhen(row.UncachedInputTokens, row.KnownUncachedInputTokenCount == row.EventCount),
+				OutputTokens:        int64PtrWhen(row.OutputTokens, row.KnownOutputTokenCount == row.EventCount),
+			},
+		})
+		lastSession, lastHarness, lastModel = row.SessionID, row.Harness, row.ModelID
+	}
+	return out, nil
+}
+
 // ListCompactSessionUsageAggregates returns sessions with observed usage in
 // one grouped read. projectID optionally limits the rows to one dashboard board.
 func (s *Store) ListCompactSessionUsageAggregates(ctx context.Context, projectID domain.ProjectID) ([]domain.CompactSessionUsageAggregate, error) {

@@ -11,12 +11,17 @@ import (
 type usageSummaryStoreStub struct {
 	projectID domain.ProjectID
 	rows      []domain.CompactSessionUsageAggregate
+	hourly    []domain.SessionHourlyUsage
 	calls     int
 }
 
 func (s *usageSummaryStoreStub) ListCompactSessionUsageAggregates(_ context.Context, id domain.ProjectID) ([]domain.CompactSessionUsageAggregate, error) {
 	s.projectID, s.calls = id, s.calls+1
 	return s.rows, nil
+}
+func (s *usageSummaryStoreStub) ListProjectSessionHourlyUsage(_ context.Context, projectID domain.ProjectID) ([]domain.SessionHourlyUsage, error) {
+	s.projectID = projectID
+	return s.hourly, nil
 }
 
 func TestSummaryReaderListCompactUsesOneBatchRead(t *testing.T) {
@@ -140,5 +145,33 @@ func completeCostAggregate(events, total, input, cachedInput, output int64) doma
 		KnownInputCount:        events, KnownInputNanos: input,
 		KnownCachedInputCount: events, KnownCachedInputNanos: cachedInput,
 		KnownOutputCount: events, KnownOutputNanos: output,
+	}
+}
+
+func TestListProjectSessionHourlyHidesSyntheticModels(t *testing.T) {
+	store := &usageSummaryStoreStub{hourly: []domain.SessionHourlyUsage{
+		{SessionID: "reverb-12", Models: []domain.SessionModelHourlyUsage{
+			{Harness: domain.HarnessClaudeCode, ModelID: "<synthetic>", Buckets: []domain.SessionHourlyUsageBucket{{HourUTC: "2026-11-08T09"}}},
+			{Harness: domain.HarnessClaudeCode, ModelID: "glm-5.3", Buckets: []domain.SessionHourlyUsageBucket{{HourUTC: "2026-11-08T09"}}},
+		}},
+		{SessionID: "reverb-13", Models: []domain.SessionModelHourlyUsage{
+			{Harness: domain.HarnessCodex, ModelID: " <Synthetic> "},
+		}},
+	}}
+	rows, err := NewSummaryReader(store).ListProjectSessionHourly(context.Background(), "reverb")
+	if err != nil {
+		t.Fatalf("list project session hourly: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %+v, want two sessions", rows)
+	}
+	if store.projectID != "reverb" {
+		t.Fatalf("project id = %q, want reverb", store.projectID)
+	}
+	if len(rows[0].Models) != 1 || rows[0].Models[0].ModelID != "glm-5.3" {
+		t.Fatalf("first session models = %+v, want only glm-5.3", rows[0].Models)
+	}
+	if len(rows[1].Models) != 0 {
+		t.Fatalf("second session models = %+v, want synthetic removed", rows[1].Models)
 	}
 }

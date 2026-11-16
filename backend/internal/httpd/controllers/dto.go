@@ -2523,6 +2523,49 @@ type MemoryPressureResponse struct {
 	PressureSource string  `json:"pressureSource" enum:"psi,available_pct,memorystatus"`
 }
 
+// UsageProjectIDParam is the {projectId} path parameter for project-scoped
+// usage routes.
+type UsageProjectIDParam struct {
+	ProjectID domain.ProjectID `path:"projectId"`
+}
+
+// HourlyUsageBucketResponse is one UTC-hour token bucket of one model. Null
+// counters mean unknown, matching usage totals everywhere else.
+type HourlyUsageBucketResponse struct {
+	Hour                string `json:"hour" description:"UTC hour bucket, formatted YYYY-MM-DDTHH."`
+	InputTokens         *int64 `json:"inputTokens" minimum:"0" description:"Total input, including cached and uncached input."`
+	CachedInputTokens   *int64 `json:"cachedInputTokens" minimum:"0" description:"Input read from an existing provider cache."`
+	UncachedInputTokens *int64 `json:"uncachedInputTokens" minimum:"0" description:"Input not read from an existing provider cache. Includes cache writes."`
+	OutputTokens        *int64 `json:"outputTokens" minimum:"0"`
+}
+
+// SessionModelHourlyUsageResponse groups one harness/model pair's hourly
+// buckets.
+type SessionModelHourlyUsageResponse struct {
+	Harness string                      `json:"harness"`
+	ModelID string                      `json:"modelId"`
+	Buckets []HourlyUsageBucketResponse `json:"buckets"`
+}
+
+// ProjectSessionUsageResponse is one session of the project hourly usage
+// report, carrying enough session facts to render a row without a second
+// lookup.
+type ProjectSessionUsageResponse struct {
+	SessionID    domain.SessionID                  `json:"sessionId"`
+	Num          int64                             `json:"num"`
+	Kind         string                            `json:"kind"`
+	IsTerminated bool                              `json:"isTerminated"`
+	CreatedAt    time.Time                         `json:"createdAt" format:"date-time"`
+	Incomplete   bool                              `json:"incomplete"`
+	Models       []SessionModelHourlyUsageResponse `json:"models"`
+}
+
+// ListProjectSessionUsageResponse is the body of GET
+// /api/v1/usage/projects/{projectId}/sessions.
+type ListProjectSessionUsageResponse struct {
+	Sessions []ProjectSessionUsageResponse `json:"sessions"`
+}
+
 // SystemRequirementsResponse is the body of GET /api/v1/system/requirements.
 type SystemRequirementsResponse = systemcheck.Report
 

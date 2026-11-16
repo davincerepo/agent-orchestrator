@@ -400,6 +400,33 @@ type CompactSessionUsage struct {
 	EstimatedCost   *EstimatedCost
 }
 
+// SessionHourlyUsageBucket is one UTC-hour token bucket, keyed "YYYY-MM-DDTHH".
+// Nil token counters follow the UsageTokenMetrics convention.
+type SessionHourlyUsageBucket struct {
+	HourUTC string
+	Tokens  UsageTokenMetrics
+}
+
+// SessionModelHourlyUsage groups one harness/model pair's hourly buckets.
+type SessionModelHourlyUsage struct {
+	Harness AgentHarness
+	ModelID string
+	Buckets []SessionHourlyUsageBucket
+}
+
+// SessionHourlyUsage is the per-session hourly usage read model: enough session
+// facts to render a row without a second lookup, plus hourly token buckets that
+// let callers apply their own time-of-day pricing.
+type SessionHourlyUsage struct {
+	SessionID    SessionID
+	Num          int64
+	Kind         SessionKind
+	IsTerminated bool
+	CreatedAt    time.Time
+	Incomplete   bool
+	Models       []SessionModelHourlyUsage
+}
+
 // SourceCursorState is the durable source state to commit after parsing a
 // chunk. ApplyUsageChunk writes it atomically with the emitted events.
 type SourceCursorState struct {
