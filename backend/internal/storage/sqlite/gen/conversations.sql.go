@@ -2036,6 +2036,50 @@ func (q *Queries) PostponeConversationTurnAutoResume(ctx context.Context, arg Po
 	return result.RowsAffected()
 }
 
+const pruneProviderEventDeltasBefore = `-- name: PruneProviderEventDeltasBefore :execrows
+DELETE FROM conversation_provider_events
+WHERE id IN (
+    SELECT pe.id FROM conversation_provider_events AS pe
+    WHERE pe.method IN ('reasoning.delta', 'message.delta', 'command.output.delta')
+      AND pe.received_at < ?
+    LIMIT ?
+)
+`
+
+type PruneProviderEventDeltasBeforeParams struct {
+	ReceivedAt time.Time
+	Limit      int64
+}
+
+func (q *Queries) PruneProviderEventDeltasBefore(ctx context.Context, arg PruneProviderEventDeltasBeforeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneProviderEventDeltasBefore, arg.ReceivedAt, arg.Limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const pruneProviderEventsToMaxRows = `-- name: PruneProviderEventsToMaxRows :execrows
+DELETE FROM conversation_provider_events
+WHERE id IN (
+    SELECT pe.id FROM conversation_provider_events AS pe ORDER BY pe.id ASC
+    LIMIT MIN(?1, MAX(0, (SELECT COUNT(*) FROM conversation_provider_events) - ?2))
+)
+`
+
+type PruneProviderEventsToMaxRowsParams struct {
+	BatchLimit interface{}
+	MaxRows    interface{}
+}
+
+func (q *Queries) PruneProviderEventsToMaxRows(ctx context.Context, arg PruneProviderEventsToMaxRowsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneProviderEventsToMaxRows, arg.BatchLimit, arg.MaxRows)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const recomputeConversationCompactedAt = `-- name: RecomputeConversationCompactedAt :exec
 UPDATE conversations
 SET compacted_at = (
