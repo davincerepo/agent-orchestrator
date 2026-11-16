@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -260,6 +261,7 @@ func newTestCodexAccountManager(t *testing.T, factory ports.CodexAccountClientFa
 		filepath.Join(root, "switch-staging"), filepath.Join(root, "device-home"),
 		factory, nil)
 	manager.snapshotRevision = 0
+	manager.resolveBinary = func(context.Context) (string, error) { return "/test/bin/codex", nil }
 	if state != nil {
 		if active, ok := state.testDeviceAccount(); ok && active.AccountID != "" {
 			manager.deviceAccountID = active.AccountID
@@ -371,7 +373,7 @@ func TestNativeLoginTerminalUsesOnePrivatePendingHomeAndNoName(t *testing.T) {
 		t.Fatalf("terminal opens = %d", len(terminal.opened))
 	}
 	opened := terminal.opened[0]
-	if !slices.Equal(opened.Argv, []string{"/Applications/AO.app/Contents/MacOS/ao", "codex-login"}) {
+	if !slices.Equal(opened.Argv, []string{"/Applications/AO.app/Contents/MacOS/ao", "codex-login", "--executable", "/test/bin/codex"}) {
 		t.Fatalf("argv = %#v", opened.Argv)
 	}
 	home := opened.Env["CODEX_HOME"]
@@ -1813,6 +1815,70 @@ func TestImportedGlobalCredentialDoesNotBlockNormalAuthentication(t *testing.T) 
 	}
 }
 
+func TestProbeRecognizesFirstCodexLoginWithoutDaemonRestart(t *testing.T) {
+	root := t.TempDir()
+	globalHome := filepath.Join(root, "global-codex")
+	if err := ensurePrivateDirectory(globalHome); err != nil {
+		if runtime.GOOS == "windows" && strings.Contains(err.Error(), "codex private directory owner is unsafe") {
+			t.Skipf("Windows test temp directory is not owned by the current user: %v", err)
+		}
+		t.Fatal(err)
+	}
+	email := "signed-in@example.com"
+	factory := &fakeCodexAccountFactory{
+		capabilities: supportedCodexAccountCapabilities(),
+		open: func(ports.CodexAccountContext) (ports.CodexAccountClient, error) {
+			return &fakeCodexAccountClient{read: ports.CodexAccountObservation{
+				Authentication: domain.AgentAuthenticationAuthorized,
+				Method:         domain.CodexAuthMethodChatGPT,
+				Email:          &email,
+			}}, nil
+		},
+	}
+	svc := NewWithDeps(Deps{
+		CodexAccountRoot:       filepath.Join(root, "accounts"),
+		CodexPendingRoot:       filepath.Join(root, "pending"),
+		CodexSwitchStagingRoot: filepath.Join(root, "staging"),
+		CodexGlobalHome:        globalHome,
+		CodexAccounts:          factory,
+	})
+	svc.agents = []agentregistry.HarnessAgent{readinessHarness("codex", "Codex", &readinessTestAgent{
+		resolve: func(context.Context) (string, error) { return "codex", nil },
+		// Native Codex sees the new auth.json immediately; the managed account
+		// projection must not override that with its stale signed-out snapshot.
+		auth: func(context.Context) (ports.AgentAuthStatus, error) { return ports.AgentAuthStatusAuthorized, nil },
+	})}
+	svc.readiness = newReadinessCoordinator(readinessCoordinatorConfig{
+		Agents: svc.agents, AuthenticationCheck: svc.structuredCodexAuthentication,
+	})
+	svc.codexAccounts.catalog.newID = func() string { return testAccountID }
+	ctx := context.Background()
+	if err := svc.WaitCodexAccountStoreReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.codexAccounts.reconcileGlobal(ctx); err != nil {
+		t.Fatal(err)
+	}
+	before, err := svc.Probe(ctx, "codex")
+	if err != nil || before.Agent.AuthStatus != ports.AgentAuthStatusUnauthorized {
+		t.Fatalf("pre-login probe = %#v, %v", before, err)
+	}
+	if err := writeGlobalCredentialAtomic(filepath.Join(globalHome, codexCredentialFilename), testOAuthCredential("provider-account", "access")); err != nil {
+		t.Fatal(err)
+	}
+	after, err := svc.Probe(ctx, "codex")
+	if err != nil || after.Agent.AuthStatus != ports.AgentAuthStatusAuthorized {
+		t.Fatalf("post-login probe = %#v, %v; want authorized without restart", after, err)
+	}
+	if id := svc.codexAccounts.activeAccountID(); id == "" {
+		t.Fatal("post-login probe did not import the newly signed-in account")
+	}
+	readiness, err := svc.EnsureAgentReadiness(ctx, "codex", domain.AgentReadinessPurposeDisplay)
+	if err != nil || readiness.Authentication.State != domain.AgentAuthenticationAuthorized {
+		t.Fatalf("post-login Harness readiness = %#v, %v; want authorized", readiness.Authentication, err)
+	}
+}
+
 func TestGlobalSwitchCapabilityAllowsMissingCredentialButRejectsUnsafeCredential(t *testing.T) {
 	root := t.TempDir()
 	globalHome := filepath.Join(root, "global-codex")
@@ -2444,5 +2510,32 @@ func TestRecheckAfterExternalLoginFindsTheNewDeviceCredential(t *testing.T) {
 	authentication, ok := service.structuredCodexAuthentication(context.Background(), string(domain.HarnessCodex), domain.AgentReadinessPurposeDisplay)
 	if !ok || authentication.State != domain.AgentAuthenticationAuthorized {
 		t.Fatalf("authentication after login recheck = %#v (structured=%t)", authentication, ok)
+	}
+}
+
+func TestCustomModelProviderSkipsCodexAccountCheck(t *testing.T) {
+	root := t.TempDir()
+	globalHome := filepath.Join(root, "global-codex")
+	if err := ensurePrivateDirectory(globalHome); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", globalHome)
+	manager := newCodexAccountManager(context.Background(), filepath.Join(root, "accounts"), filepath.Join(root, "pending"), filepath.Join(root, "staging"), globalHome, nil, nil)
+	manager.accountStoreReady = true
+	manager.factory = &fakeCodexAccountFactory{capabilities: supportedCodexAccountCapabilities()}
+	service := &Service{codexAccounts: manager, readiness: newReadinessCoordinator(readinessCoordinatorConfig{})}
+	if err := manager.reconcileGlobal(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if auth, handled := service.authenticationWithAccount(context.Background(), string(domain.HarnessCodex), domain.AgentReadinessPurposeLaunch); !handled || auth.State != domain.AgentAuthenticationUnauthorized {
+		t.Fatalf("signed out with the OpenAI provider = %#v (handled=%t)", auth, handled)
+	}
+
+	config := "model_provider = \"litellm\"\n[model_providers.litellm]\nenv_key = \"LITELLM_API_KEY\"\n"
+	if err := os.WriteFile(filepath.Join(globalHome, "config.toml"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if auth, handled := service.authenticationWithAccount(context.Background(), string(domain.HarnessCodex), domain.AgentReadinessPurposeLaunch); handled {
+		t.Fatalf("custom provider was decided by the Codex account check: %#v", auth)
 	}
 }

@@ -34,7 +34,7 @@ func TestFleetHTTPRejectsCrossProjectDispatch(t *testing.T) {
 	}}
 	// The real service is essential: this verifies caller context survives the
 	// HTTP boundary and rejects before touching a runtime or project workspace.
-	svc := sessionsvc.New(nil, st)
+	svc := sessionsvc.NewWithDeps(sessionsvc.Deps{Store: st})
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	router := httpd.NewRouterWithControl(config.Config{}, log, nil, httpd.APIDeps{Sessions: svc, Conversations: chatsvc.New(chatsvc.Options{Sessions: st})}, httpd.ControlDeps{})
 	for _, tc := range []struct{ path, body string }{

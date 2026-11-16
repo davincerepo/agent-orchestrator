@@ -24,6 +24,8 @@ type sendOptions struct {
 // import httpd.
 type sendAPIRequest struct {
 	CallerSessionID string `json:"callerSessionId,omitempty"`
+	UserAuthored    bool   `json:"userAuthored,omitempty"`
+	SenderSessionID string `json:"senderSessionId,omitempty"`
 	Message         string `json:"message"`
 }
 
@@ -33,6 +35,7 @@ type conversationMessageAPIRequest struct {
 	CallerSessionID string `json:"callerSessionId,omitempty"`
 	Text            string `json:"text"`
 	ClientMessageID string `json:"clientMessageId"`
+	SenderSessionID string `json:"senderSessionId,omitempty"`
 	RecoverOnly     bool   `json:"recoverOnly,omitempty"`
 }
 
@@ -50,7 +53,11 @@ func newSendCommand(ctx *commandContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "send",
 		Short: "Send a message to a running agent session",
-		Args:  noArgs,
+		Long: "Send a message to a running agent session.\n\n" +
+			"This messages agents, not shell terminals. To type a command into one of\n" +
+			"this session's terminal tabs, use `ao pane run <tab> <command>` or\n" +
+			"`ao pane send <tab> <text>`; `ao pane` lists the terminal tab keys.",
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return ctx.sendMessage(cmd.Context(), opts)
 		},
@@ -100,7 +107,12 @@ func (c *commandContext) sendMessage(ctx context.Context, opts sendOptions) erro
 	// from sanitized issue refs; keep the URL well-formed regardless.
 	path := "sessions/" + url.PathEscape(session)
 	if !opts.steer {
-		return c.postJSON(ctx, path+"/send", sendAPIRequest{CallerSessionID: caller, Message: message}, nil)
+		return c.postJSON(ctx, path+"/send", sendAPIRequest{
+			CallerSessionID: caller,
+			Message:         message,
+			SenderSessionID: caller,
+			UserAuthored:    caller == "",
+		}, nil)
 	}
 	return c.steerMessage(ctx, path, caller, message, strings.TrimSpace(opts.clientMessageID), opts.recoverOnly)
 }
@@ -115,7 +127,11 @@ func (c *commandContext) steerMessage(
 	}
 	var result steerOrSendAPIResponse
 	err := c.postJSON(ctx, sessionPath+"/conversation/steer-or-send", conversationMessageAPIRequest{
-		CallerSessionID: caller, Text: message, ClientMessageID: clientMessageID, RecoverOnly: recoverOnly,
+		CallerSessionID: caller,
+		Text:            message,
+		ClientMessageID: clientMessageID,
+		SenderSessionID: caller,
+		RecoverOnly:     recoverOnly,
 	}, &result)
 	if err != nil {
 		var responseErr apiResponseError
