@@ -1,6 +1,6 @@
 # 项目级逐小时用量报表（usage project hourly）
 
-分支：`fleet/feat/usage-project-hourly`。基于 `main-fleet`，集成到 `main-fleet`。
+分支：`fleet/feat/usage-project-hourly`。基于 `fleet/feat/common`，集成到 `main-fleet`。
 
 ## 行为
 
