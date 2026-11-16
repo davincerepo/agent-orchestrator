@@ -5004,6 +5004,27 @@ func activityToDomain(row gen.ConversationActivity) domain.ConversationActivity 
 	return activity
 }
 
+// PruneProviderEventDeltasBefore deletes streamed delta events older than the
+// cutoff, bounded by limit per call. Deltas have no runtime reader; the
+// projector folds their text into durable rows as it processes them.
+func (s *Store) PruneProviderEventDeltasBefore(ctx context.Context, before time.Time, limit int64) (int64, error) {
+	removed, err := s.qw.PruneProviderEventDeltasBefore(ctx, gen.PruneProviderEventDeltasBeforeParams{ReceivedAt: before, Limit: limit})
+	if err != nil {
+		return 0, fmt.Errorf("prune provider event deltas: %w", err)
+	}
+	return removed, nil
+}
+
+// PruneProviderEventsToMaxRows trims the archive to at most maxRows rows,
+// deleting the oldest first, bounded by limit per call.
+func (s *Store) PruneProviderEventsToMaxRows(ctx context.Context, maxRows, limit int64) (int64, error) {
+	removed, err := s.qw.PruneProviderEventsToMaxRows(ctx, gen.PruneProviderEventsToMaxRowsParams{BatchLimit: limit, MaxRows: maxRows})
+	if err != nil {
+		return 0, fmt.Errorf("prune provider events to max rows: %w", err)
+	}
+	return removed, nil
+}
+
 // ProviderEventsSince reads the raw provider-event archive forward from an id.
 // This is the recovery path: when a projection turns out to be wrong, these rows
 // are the only account of what the provider actually said.

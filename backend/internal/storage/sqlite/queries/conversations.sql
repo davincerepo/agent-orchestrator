@@ -1846,6 +1846,24 @@ INSERT OR IGNORE INTO conversation_provider_events (
     COALESCE((SELECT active_branch_id FROM conversations WHERE id = sqlc.arg(conversation_id)), '')
 );
 
+-- name: PruneProviderEventDeltasBefore :execrows
+DELETE FROM conversation_provider_events
+WHERE id IN (
+    SELECT pe.id FROM conversation_provider_events AS pe
+    WHERE pe.method IN ('reasoning.delta', 'message.delta', 'command.output.delta')
+      AND pe.received_at < ?
+    LIMIT ?
+);
+
+
+-- name: PruneProviderEventsToMaxRows :execrows
+DELETE FROM conversation_provider_events
+WHERE id IN (
+    SELECT pe.id FROM conversation_provider_events AS pe ORDER BY pe.id ASC
+    LIMIT MIN(sqlc.arg(batch_limit), MAX(0, (SELECT COUNT(*) FROM conversation_provider_events) - sqlc.arg(max_rows)))
+);
+
+
 -- name: SelectConversationProviderEvents :many
 WITH RECURSIVE active_path(branch_id, max_sequence) AS (
     SELECT conversations.active_branch_id, CAST(NULL AS INTEGER)
