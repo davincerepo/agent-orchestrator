@@ -31,6 +31,14 @@
 
 <br />
 
+## AO Fleet fork
+
+原仓库：https://github.com/Untrivial-ai/agent-orchestrator
+
+Fork：https://github.com/davincerepo/agent-orchestrator · 集成分支：`main-fleet`
+
+功能与分支维护说明：[docs/fork-fleet/fork.md](docs/fork-fleet/fork.md)。
+
 ## Why Orchestrator.inc
 
 One coding agent can handle a task. Running several means splitting the work, keeping branches from colliding, and following every change through CI, review, and merge. Orchestrator.inc is a local desktop workspace for that: every task gets its own agent, branch, and worktree, and your code stays on your machine.
