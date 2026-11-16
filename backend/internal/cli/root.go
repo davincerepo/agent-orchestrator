@@ -25,6 +25,9 @@ import (
 
 // Execute runs the ao CLI with process stdio.
 func Execute() error {
+	if err := configureFleetCLI(); err != nil {
+		return err
+	}
 	return executeWithDeps(DefaultDeps(), os.Args[1:])
 }
 
@@ -222,6 +225,9 @@ func NewRootCommand(deps Deps) *cobra.Command {
 	root.SetIn(deps.In)
 	root.SetOut(deps.Out)
 	root.SetErr(deps.Err)
+	if desktopFlavor == "fleet-portable" {
+		root.SetVersionTemplate("{{.Version}}\n")
+	}
 	root.CompletionOptions.DisableDefaultCmd = true
 	// Tag flag-parse failures as usage errors so the entrypoint can exit 2 for
 	// misuse versus 1 for runtime failures. Subcommands inherit this func.
@@ -379,13 +385,21 @@ func atMostOneArg(cmd *cobra.Command, args []string) error {
 }
 
 func newDaemonCommand() *cobra.Command {
-	return &cobra.Command{
+	var stopBackground bool
+	cmd := &cobra.Command{
 		Use:    "daemon",
 		Short:  "Run the Orchestrator backend daemon",
 		Hidden: true,
 		Args:   noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if desktopFlavor == "fleet-portable" {
+				return daemon.RunFleet(cmd.Context(), stopBackground, Version)
+			}
 			return daemon.Run(Version)
 		},
 	}
+	if desktopFlavor == "fleet-portable" {
+		cmd.Flags().BoolVar(&stopBackground, "stop-background", false, "Stop this Fleet instance's background hosts after its daemon exits")
+	}
+	return cmd
 }

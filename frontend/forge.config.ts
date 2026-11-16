@@ -1,4 +1,6 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
+import { fleetForgeConfig } from "./fork-fleet/forge";
+import fleetProfile from "./fork-fleet/profile.json";
 import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
@@ -38,8 +40,6 @@ const AUTH_PROTOCOL = {
 const AUTH_PROTOCOL_MIME_TYPE = "x-scheme-handler/ao-app";
 const PACKAGED_EXTERNAL_DEPENDENCIES = [
 	"/node_modules/better-sqlite3",
-	"/node_modules/bindings",
-	"/node_modules/file-uri-to-path",
 ];
 
 function ignoreFromVitePackage(file: string): boolean {
@@ -53,6 +53,14 @@ function ignoreFromVitePackage(file: string): boolean {
 }
 
 async function prepareNativeDependencies(platform: NodeJS.Platform, arch: string): Promise<void> {
+	// better-sqlite3 v13 ships Node-API prebuilds inside the npm package
+	// (prebuilds/<platform>-<arch>.node), ABI-stable across Electron versions.
+	// Nothing to rebuild for it: @electron/rebuild does not recognize that flat
+	// layout and would fall through to node-gyp, which needs a full Visual
+	// Studio install on Windows. Only rebuild when the module still relies on
+	// the source-tree toolchain.
+	const sqlitePrebuild = path.join(process.cwd(), "node_modules", "better-sqlite3", "prebuilds", `${platform}-${arch}.node`);
+	if (existsSync(sqlitePrebuild)) return;
 	// Rebuild in the source tree, where prebuild-install and its helper packages
 	// are available. The Vite package intentionally carries only the resulting
 	// native runtime, not the install-time download toolchain.
@@ -278,15 +286,12 @@ const config: ForgeConfig = {
 			].join("\n");
 			writeFileSync("app-update.yml", yml);
 		},
-		packageAfterPrune: async (_forgeConfig, buildPath) => {
-			const nativeModule = path.join(
-				buildPath,
-				"node_modules",
-				"better-sqlite3",
-				"build",
-				"Release",
-				"better_sqlite3.node",
-			);
+		packageAfterPrune: async (_forgeConfig, buildPath, _electronVersion, platform, arch) => {
+			// v13 ships Node-API prebuilds inside the package; v12 needed the
+			// source-tree rebuild output. Accept either runtime location.
+			const nativeModule = existsSync(path.join(buildPath, "node_modules", "better-sqlite3", "prebuilds"))
+				? path.join(buildPath, "node_modules", "better-sqlite3", "prebuilds", `${platform}-${arch}.node`)
+				: path.join(buildPath, "node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node");
 			if (!existsSync(nativeModule)) {
 				throw new Error("Packaged app is missing the better-sqlite3 native runtime");
 			}
@@ -382,7 +387,13 @@ const config: ForgeConfig = {
 			return makeResults;
 		},
 	},
-	rebuildConfig: {},
+	// better-sqlite3 v13 ships Node-API prebuilds inside its npm package
+	// (prebuilds/<platform>-<arch>.node, ABI-stable across Electron versions),
+	// so no native module needs an Electron-ABI rebuild at package time. Leave
+	// onlyModules empty: @electron/rebuild does not recognize v13's flat
+	// prebuilds layout and would fall through to node-gyp, which requires a
+	// full Visual Studio install on Windows.
+	rebuildConfig: { onlyModules: [] },
 	makers: [
 		// Windows installer: NSIS via electron-builder (see makers/maker-nsis.ts).
 		// Replaces Squirrel.Windows, which only does per-user installs with no
@@ -517,4 +528,4 @@ const config: ForgeConfig = {
 	],
 };
 
-export default config;
+export default process.env.AO_DESKTOP_FLAVOR === fleetProfile.flavor ? fleetForgeConfig(config) : config;

@@ -9,5 +9,5 @@ import (
 )
 
 func isDescriptorSharingViolation(err error) bool {
-	return errors.Is(err, windows.ERROR_SHARING_VIOLATION)
+	return errors.Is(err, windows.ERROR_SHARING_VIOLATION) || errors.Is(err, windows.ERROR_LOCK_VIOLATION)
 }

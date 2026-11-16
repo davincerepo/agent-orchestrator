@@ -72,6 +72,9 @@ const workOSClientID = process.env.VITE_WORKOS_CLIENT_ID?.trim();
 if (workOSClientID) {
 	ldflags.push(`-X ${cliPackage}.defaultWorkOSClientID=${workOSClientID}`);
 }
+if (process.env.AO_DESKTOP_FLAVOR === "fleet-portable") {
+	ldflags.push(`-X ${cliPackage}.desktopFlavor=fleet-portable`);
+}
 
 const result = spawnSync("go", ["build", "-ldflags", ldflags.join(" "), "-o", buildOutPath, "./cmd/ao"], {
 	cwd: backendRoot,
