@@ -113,7 +113,7 @@
 		"@xterm/addon-web-links": "0.13.0-beta.301",
 		"@xterm/addon-webgl": "0.20.0-beta.300",
 		"@xterm/xterm": "6.1.0-beta.304",
-		"better-sqlite3": "^12.11.1",
+		"better-sqlite3": "^13.2.0",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"cmdk": "^1.1.1",

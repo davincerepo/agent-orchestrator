@@ -24,7 +24,7 @@ function run(command, args) {
 }
 
 // Reuse resource preparation without running the upstream make/publish path.
-for (const script of ["build-daemon.mjs", "build-tmux.mjs", "prepare-agent-browser.mjs", "build-acp-runtime.mjs"]) {
+for (const script of ["build-daemon.mjs", "build-browser-extension.mjs", "build-tmux.mjs", "prepare-agent-browser.mjs", "build-acp-runtime.mjs"]) {
 	run(process.execPath, [join(root, "scripts", script)]);
 }
 run(process.execPath, [require.resolve("@electron-forge/cli/dist/electron-forge.js"), "package", "--platform=win32", "--arch=x64"]);
