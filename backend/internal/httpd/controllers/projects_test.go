@@ -437,6 +437,22 @@ func TestProjectsAPI_RejectsUnknownConfigKeys(t *testing.T) {
 	body, status, _ = doRequest(t, srv, "PUT", "/api/v1/projects/rej", `{"displayName":"Rejects unknown","config":{"tracker":{"plugin":"github"}}}`)
 	assertErrorCode(t, body, status, http.StatusBadRequest, "INVALID_JSON")
 
+	// Every role accepts effort and rejects the removed project-config alias.
+	for _, config := range []string{
+		`{"agentConfig":{"effort":"high"}}`,
+		`{"worker":{"agentConfig":{"effort":"high"}}}`,
+		`{"orchestrator":{"agentConfig":{"effort":"high"}}}`,
+		`{"reviewers":[{"harness":"codex","agentConfig":{"effort":"high"}}]}`,
+	} {
+		body, status, _ = doRequest(t, srv, "PUT", "/api/v1/projects/rej/config", `{"config":`+config+`}`)
+		if status != http.StatusOK {
+			t.Fatalf("effort config %s = %d, want 200; body=%s", config, status, body)
+		}
+		removed := strings.ReplaceAll(config, `"effort"`, `"reasoningEffort"`)
+		body, status, _ = doRequest(t, srv, "PUT", "/api/v1/projects/rej/config", `{"config":`+removed+`}`)
+		assertErrorCode(t, body, status, http.StatusBadRequest, "INVALID_JSON")
+	}
+
 	// POST /projects gets the same gate, so add-time config rides the same rail.
 	otherRepo := gitRepo(t, "rejects-unknown-add")
 	body, status, _ = doRequest(t, srv, "POST", "/api/v1/projects", `{"path":`+quote(otherRepo)+`,"projectId":"rej2","config":{"orchestratorRules":"x"}}`)

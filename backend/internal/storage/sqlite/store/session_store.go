@@ -1259,6 +1259,7 @@ func rowToRecord(row gen.GetSessionRow) domain.SessionRecord {
 			Model:                            row.Model,
 			Effort:                           row.Effort,
 			Permissions:                      domain.PermissionMode(row.SessionPermissions),
+			ServiceTier:                      row.ServiceTier,
 		},
 		RequestedOutput:   domain.RequestedOutput(row.RequestedOutput),
 		CleanupGeneration: row.CleanupGeneration,
@@ -1399,6 +1400,7 @@ func recordToInsert(rec domain.SessionRecord, num int64) gen.InsertSessionParams
 		IsTaskPreparation:                rec.IsTaskPreparation,
 		AutomationRunID:                  rec.AutomationRunID,
 		AutomationLaunchCompleted:        rec.AutomationLaunchCompleted,
+		ServiceTier:                      rec.Metadata.ServiceTier,
 		ClientRequestID:                  rec.ClientRequestID,
 		ClientRequestHash:                rec.ClientRequestHash,
 	}
@@ -1458,6 +1460,7 @@ func recordToUpdate(rec domain.SessionRecord) gen.UpdateSessionParams {
 		Effort:                           rec.Metadata.Effort,
 		UpdatedAt:                        rec.UpdatedAt,
 		AutomationLaunchCompleted:        rec.AutomationLaunchCompleted,
+		ServiceTier:                      rec.Metadata.ServiceTier,
 	}
 }
 

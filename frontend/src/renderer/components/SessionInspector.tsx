@@ -931,7 +931,7 @@ function SessionControls({ session, hostId, scratchpad }: { session: WorkspaceSe
 		const workspaces = queryClient.getQueryData<WorkspaceSummary[]>(workspaceKey) ?? [];
 		const workspace = workspaces.find((w) => w.id === session.workspaceId);
 		const nextNav = resolveNextNavigationAfterSessionKill(workspace, session.id);
-		
+
 		setConfirmOpen(false);
 		terminate.mutate(hostId ? { ...session, hostId, deleteArtifacts } : { ...session, deleteArtifacts });
 		

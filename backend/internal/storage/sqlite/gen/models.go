@@ -292,6 +292,7 @@ type Conversation struct {
 	ActiveBranchID             string
 	OpencodeMode               string
 	AutoCompactWindow          string
+	ServiceTier                sql.NullString
 }
 
 type ConversationActivity struct {
@@ -800,6 +801,7 @@ type Session struct {
 	DisplayNameExplicit              bool
 	AcceptedDeliveryID               string
 	AcceptedDeliveryLaunchID         string
+	ServiceTier                      string
 }
 
 type SessionAgentAccount struct {

@@ -4403,6 +4403,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/{sessionId}/terminal-model-parameters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the terminal's saved native model parameters without changing configuration */
+        get: operations["getTerminalModelParameters"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/{sessionId}/workspace/branches": {
         parameters: {
             query?: never;
@@ -5312,6 +5329,7 @@ export interface components {
             mode?: string;
             model?: string;
             permissions?: string;
+            serviceTier?: string;
         };
         AgentInfo: {
             /**
@@ -5406,6 +5424,7 @@ export interface components {
             /** Format: int64 */
             contextWindow?: number;
             defaultEffort?: string;
+            effortUnknown?: boolean;
             efforts?: string[];
             id: string;
             inputs?: string[];
@@ -6874,6 +6893,8 @@ export interface components {
             model?: string;
             planMode?: boolean;
             reasoningEffort?: string;
+            /** @enum {string} */
+            serviceTier?: "default" | "priority";
         };
         ConversationUsageLimitResponse: {
             autoResume: boolean;
@@ -6984,6 +7005,8 @@ export interface components {
             mode?: "tui" | "chat";
             model?: string;
             projectId: string;
+            /** @enum {string} */
+            serviceTier?: "default" | "priority";
             taskPreparation?: string;
         };
         DelegateTaskResponse: {
@@ -8939,6 +8962,8 @@ export interface components {
             /** @enum {string} */
             requestedOutput?: "artifact";
             /** @enum {string} */
+            serviceTier?: "default" | "priority";
+            /** @enum {string} */
             trackerProvider?: "github" | "gitlab";
         };
         SpawnSessionResponse: {
@@ -9126,6 +9151,13 @@ export interface components {
             isSignedIn?: null | boolean;
             lifetimeSessions?: null | number;
             optedOut: boolean;
+        };
+        TerminalModelParametersResponse: {
+            model?: string;
+            reasoningEffort?: string;
+            /** @enum {string} */
+            serviceTier?: "" | "default" | "priority";
+            supported: boolean;
         };
         TerminalShellCheckResponse: {
             executable: boolean;
@@ -26049,6 +26081,65 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getTerminalModelParameters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Session identifier, e.g. project-1. */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalModelParametersResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
                 headers: {
                     [name: string]: unknown;
                 };

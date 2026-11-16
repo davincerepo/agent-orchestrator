@@ -70,6 +70,7 @@ import { CLOUD_STANDALONE_WORKSPACE_ID, STANDALONE_WORKSPACE_ID, toAgentProvider
 import { CODER_PROVIDER, projectSandboxProvider } from "../lib/cloud-offering";
 import { type EffortAvailability } from "./settings/EffortPicker";
 import { COMPOSER_MENU_WIDTH, TaskEffortPicker, TaskModelPicker } from "./TaskModelControls";
+import { ServiceTierControl, findParameterModel, resolveServiceTier, type ServiceTier } from "./settings/ModelParametersControl";
 import { useModelTuning } from "./settings/ModelTuningControls";
 import {
 	readTaskComposerPreferences,
@@ -93,6 +94,7 @@ type CreateTaskInput = {
 	effort?: string;
 	mode?: "chat" | "tui";
 	approvalMode?: ApprovalMode;
+	serviceTier?: ServiceTier;
 	accountId?: string;
 	attachments?: FileAttachmentPayload[];
 	taskPreparation?: string;
@@ -192,6 +194,7 @@ export function useTaskLaunch({ projectId, hostId }: {
 	const [model, setModel] = useState("");
 	const [mode, setMode] = useState("");
 	const [effort, setEffort] = useState("");
+	const [serviceTier, setServiceTier] = useState<ServiceTier | undefined>();
 	const [agent, setAgent] = useState("");
 	const [agentTouched, setAgentTouched] = useState(false);
 	const [modelTouched, setModelTouched] = useState(false);
@@ -360,6 +363,7 @@ export function useTaskLaunch({ projectId, hostId }: {
 						agent: input.agent,
 						...(input.model ? { model: input.model } : {}),
 						...(input.effort !== undefined ? { effort: input.effort } : {}),
+					...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
 						...(input.mode ? { mode: input.mode } : {}),
 						...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
 						...(input.accountId ? { accountId: input.accountId } : {}),
@@ -411,6 +415,7 @@ export function useTaskLaunch({ projectId, hostId }: {
 					displayName,
 					model: input.model,
 					...(input.effort ? { effort: input.effort } : {}),
+					...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
 					...(input.mode ? { mode: input.mode } : {}),
 					...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
 					...(input.accountId ? { accountId: input.accountId } : {}),
@@ -498,8 +503,8 @@ export function useTaskLaunch({ projectId, hostId }: {
 	// config.worker.agent and fall back to claude-code.
 	const projectConfig = (isCloudProject ? cloudProject?.config : projectQuery.data?.config) as
 		| {
-				worker?: { agent?: string; agentConfig?: { model?: string; mode?: string; effort?: string; permissions?: string } };
-				agentConfig?: { model?: string; mode?: string; effort?: string; permissions?: string };
+				worker?: { agent?: string; agentConfig?: { model?: string; mode?: string; effort?: string; permissions?: string; serviceTier?: string } };
+				agentConfig?: { model?: string; mode?: string; effort?: string; permissions?: string; serviceTier?: string };
 		  }
 		| undefined;
 	const projectWorkerAgent = projectConfig?.worker?.agent ?? "";
@@ -555,6 +560,8 @@ export function useTaskLaunch({ projectId, hostId }: {
 	const defaultWorkerMode = projectConfig?.worker?.agentConfig?.mode ?? projectConfig?.agentConfig?.mode ?? "";
 	const defaultWorkerEffort =
 		projectConfig?.worker?.agentConfig?.effort ?? projectConfig?.agentConfig?.effort ?? "";
+	const defaultServiceTier = (projectConfig?.worker?.agentConfig?.serviceTier ??
+		projectConfig?.agentConfig?.serviceTier) as ServiceTier | undefined;
 	const projectModelForSelectedAgent = selectedAgent === configuredProjectAgent
 		? defaultWorkerModel
 		: "";
@@ -898,6 +905,13 @@ export function useTaskLaunch({ projectId, hostId }: {
 		onEffortChange: setEffort,
 		onEffortReset: setEffort,
 	});
+
+	// Fleet's durable Fast tier: offered only for Codex on a model that
+	// advertises a fast tier, resolved against the project's stored default.
+	const serviceTierSupported = selectedAgent === "codex";
+	const parameterModel = findParameterModel(catalogModels, selectedModel);
+	const inheritedServiceTier = selectedAgent === configuredProjectAgent ? defaultServiceTier : undefined;
+	const effectiveServiceTier = resolveServiceTier(parameterModel, serviceTier ?? inheritedServiceTier);
 	const effortOptions = isCloudProject && !selectedModelOrMode
 		? []
 		: effortModel?.efforts?.filter((option) => option && option.toLowerCase() !== "default") ?? [];
@@ -1168,6 +1182,7 @@ export function useTaskLaunch({ projectId, hostId }: {
 					model: requestedModel,
 					// Only explicit Codex picks set this; agent changes reset it, and TUI retries preserve it.
 					effort: requestedEffort,
+					serviceTier: serviceTierSupported ? effectiveServiceTier : undefined,
 					// The local daemon applies the default session mode itself; the control
 					// plane has none, so a cloud task carries it.
 					mode: interfaceMode ?? (isCloudProject ? settings?.defaultSessionMode : undefined),
@@ -1293,6 +1308,7 @@ export function useTaskLaunch({ projectId, hostId }: {
 		setModel("");
 		setMode("");
 		setEffort("");
+		setServiceTier(undefined);
 		setModelTouched(false);
 		setEffortTouched(false);
 	};
@@ -1400,7 +1416,7 @@ export function useTaskLaunch({ projectId, hostId }: {
 		isCoderCloudProject,
 		canSubmit,
 		isSubmitting,
-		isDirty: modelTouched || effortTouched || attachments.length > 0,
+		isDirty: modelTouched || effortTouched || serviceTier !== undefined || attachments.length > 0,
 		error,
 		status,
 		errorAction: errorAction === "install-agent" ? {
@@ -1516,7 +1532,9 @@ export function useTaskLaunch({ projectId, hostId }: {
 			hostId={hostId}
 			onRefresh={isCloudProject && !cloudCatalogAgent ? undefined : refreshSelectedModels}
 			allowNativeSelection={isCloudProject}
-			footer={cloudModelSource}
+			footer={<>{cloudModelSource}
+				{serviceTierSupported ? <ServiceTierControl model={parameterModel} value={serviceTier ?? inheritedServiceTier}
+					onChange={(value) => setServiceTier(value)} /> : null}</>}
 			modelHint={orchestratorModelHint}
 			showFollowAgentAction={Boolean(catalogDefaultOption || !isConcreteModelID(projectModelOrMode))} />,
 	};

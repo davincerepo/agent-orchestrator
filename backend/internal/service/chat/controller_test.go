@@ -652,6 +652,7 @@ func TestResumeUsesPersistedBypassPermissionForCapabilityAdmission(t *testing.T)
 	if err := st.SetConversationSettings(ctx, conversation.ID, domain.ConversationSettings{
 		Model:           "gpt-5.6-luna",
 		ReasoningEffort: "high",
+		ServiceTier:     "default",
 		ApprovalMode:    domain.PermissionModeBypassPermissions,
 	}, now); err != nil {
 		t.Fatalf("SetConversationSettings: %v", err)
@@ -687,6 +688,9 @@ func TestResumeUsesPersistedBypassPermissionForCapabilityAdmission(t *testing.T)
 	}
 	if resumed.Model != "gpt-5.6-luna" {
 		t.Fatalf("resume model = %q, want persisted model", resumed.Model)
+	}
+	if resumed.ServiceTier != "default" {
+		t.Fatalf("resume tier = %q, want explicit Fast off", resumed.ServiceTier)
 	}
 	if resumed.Effort != "high" {
 		t.Fatalf("resume effort = %q, want persisted effort", resumed.Effort)
@@ -2898,7 +2902,11 @@ func TestInterfaceHandoffDoesNotAnchorReplayBeforeProviderCoordinationBoundary(t
 		}),
 		Drivers: fakeRegistry{driver: fakeDriver{conv: conv}},
 		Log:     slog.New(slog.DiscardHandler),
-		NewID:   func() string { return fmt.Sprintf("provider-boundary-%d", time.Now().UnixNano()) },
+		NewID: func() string {
+			id := fmt.Sprintf("provider-boundary-%d", time.Now().UnixNano())
+			println("NEWID:", id)
+			return id
+		},
 	})
 	t.Cleanup(func() { _ = svc.Stop(context.Background(), testSession) })
 

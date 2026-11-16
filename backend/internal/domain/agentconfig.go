@@ -1,6 +1,9 @@
 package domain
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // PermissionMode controls how much review an agent requires before acting. It
 // lives in domain (not ports) so the typed AgentConfig can carry it; ports
@@ -28,6 +31,8 @@ type AgentConfig struct {
 	// Effort selects a model-advertised reasoning level. Empty defers to the
 	// provider/model default.
 	Effort string `json:"effort,omitempty"`
+	// ServiceTier inherits when empty; default explicitly disables Codex Fast.
+	ServiceTier string `json:"serviceTier,omitempty"`
 	// Mode selects an agent-owned operating mode when the adapter exposes modes
 	// instead of raw model ids (currently Amp: low|medium|high|ultra).
 	Mode string `json:"mode,omitempty"`
@@ -83,6 +88,14 @@ func (m PermissionMode) Valid() bool {
 // Validate rejects values outside the typed vocabulary so a bad config is
 // refused when it is set (CLI/API) rather than silently dropped at spawn.
 func (c AgentConfig) Validate() error {
+	for key, value := range map[string]string{"effort": c.Effort, "serviceTier": c.ServiceTier} {
+		if len(value) > 64 || strings.ContainsAny(value, " \t\r\n\x00") {
+			return fmt.Errorf("invalid %s %q: expected a provider option id", key, value)
+		}
+	}
+	if c.ServiceTier != "" && c.ServiceTier != "default" && c.ServiceTier != "priority" {
+		return fmt.Errorf("invalid serviceTier %q: want default or priority", c.ServiceTier)
+	}
 	switch c.Mode {
 	case "", "low", "medium", "high", "ultra":
 	default:

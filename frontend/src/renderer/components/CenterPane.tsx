@@ -36,6 +36,7 @@ import { AgentAvatar } from "./AgentAvatar";
 import { ShellTerminalTab } from "./ShellTerminalTab";
 import { TerminalTabFrame, terminalTabRenameInputClassName } from "./TerminalTabFrame";
 import { TerminalPane } from "./TerminalPane";
+import { TerminalModelParameters } from "./TerminalModelParameters";
 import { SessionTopbarPortal } from "./SessionTopbarPortal";
 import { SessionTabsTopbar } from "./PageTopbar";
 import { beginPaneTabDrag } from "../lib/pane-drag";
@@ -84,6 +85,8 @@ type CenterPaneProps = {
 	terminalSwitchingLabel?: string;
 	/** Reports attachment of the session's own agent terminal. */
 	onSessionTerminalAttached?: (attached: boolean) => void;
+	/** A workspace file tab is the active surface; hides pane-level overlays. */
+	workspaceFileActive?: boolean;
 };
 
 export type CenterPaneWorkspaceTab = {
@@ -248,6 +251,7 @@ export function CenterPane({
 	terminalBooting = false,
 	terminalSwitchingLabel,
 	onSessionTerminalAttached,
+	workspaceFileActive = false,
 }: CenterPaneProps) {
 	const { t } = useTranslation();
 	const paneRef = useRef<HTMLDivElement | null>(null);
@@ -666,6 +670,15 @@ export function CenterPane({
 			onWheelCapture={handleWheelZoom}
 		>
 			{isFullscreen ? terminalTopbar : <SessionTopbarPortal>{terminalTopbar}</SessionTopbarPortal>}
+			{session?.provider === "codex" && (session.mode ?? "tui") === "tui" &&
+				target.kind === "worker" && !workspaceFileActive && !workerInputDisabled ? (
+				<TerminalModelParameters
+					key={`${session.id}:${session.terminalGeneration ?? session.terminalHandleId ?? ""}`}
+					sessionId={session.id}
+					generation={session.terminalGeneration ?? session.terminalHandleId ?? ""}
+					enabled={daemonReady}
+				/>
+			) : null}
 			<div
 				aria-label={t("terminal.panelAria", { title: activeTerminalLabel })}
 				className="relative min-h-0 flex-1"

@@ -13239,6 +13239,52 @@ paths:
       summary: Send a message to a running session's agent
       tags:
       - sessions
+  /api/v1/sessions/{sessionId}/terminal-model-parameters:
+    get:
+      operationId: getTerminalModelParameters
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminalModelParametersResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Read the terminal's saved native model parameters without changing
+        configuration
+      tags:
+      - sessions
   /api/v1/sessions/{sessionId}/workspace/branches:
     get:
       operationId: listSessionWorkspaceBranches
@@ -15923,6 +15969,8 @@ components:
           type: string
         permissions:
           type: string
+        serviceTier:
+          type: string
       type: object
     AgentInfo:
       properties:
@@ -16168,6 +16216,8 @@ components:
           type: integer
         defaultEffort:
           type: string
+        effortUnknown:
+          type: boolean
         efforts:
           items:
             type: string
@@ -20001,6 +20051,11 @@ components:
           type: boolean
         reasoningEffort:
           type: string
+        serviceTier:
+          enum:
+          - default
+          - priority
+          type: string
       type: object
     ConversationUsageLimitResponse:
       properties:
@@ -20329,6 +20384,11 @@ components:
           maxLength: 256
           type: string
         projectId:
+          type: string
+        serviceTier:
+          enum:
+          - default
+          - priority
           type: string
         taskPreparation:
           type: string
@@ -25349,6 +25409,11 @@ components:
           enum:
           - artifact
           type: string
+        serviceTier:
+          enum:
+          - default
+          - priority
+          type: string
         trackerProvider:
           enum:
           - github
@@ -25809,6 +25874,23 @@ components:
       required:
       - distinctId
       - optedOut
+      type: object
+    TerminalModelParametersResponse:
+      properties:
+        model:
+          type: string
+        reasoningEffort:
+          type: string
+        serviceTier:
+          enum:
+          - ""
+          - default
+          - priority
+          type: string
+        supported:
+          type: boolean
+      required:
+      - supported
       type: object
     TerminalShellCheckResponse:
       properties:

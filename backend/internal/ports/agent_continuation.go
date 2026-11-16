@@ -97,6 +97,13 @@ type AgentTranscriptLocator interface {
 	LocateTranscript(ctx context.Context, ref NativeSessionRef) (path string, ok bool, err error)
 }
 
+// AgentNativeModelParametersReader reads durable provider choices without
+// starting another controller. Empty fields are unknown/inherited, never
+// replacements inferred from a model catalog or global config.
+type AgentNativeModelParametersReader interface {
+	ReadNativeModelParameters(context.Context, NativeSessionRef) (AgentConfig, error)
+}
+
 // ImportedSessionRelocation describes an imported native session that AO is
 // about to resume for the first time, from a different directory than the one
 // the provider recorded it in.

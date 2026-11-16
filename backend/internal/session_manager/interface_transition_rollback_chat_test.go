@@ -20,7 +20,7 @@ type failingEpochLifecycle struct {
 }
 
 func (failingEpochLifecycle) CommitControllerEpoch(
-	context.Context, domain.SessionID, domain.SessionMode, domain.SessionMode, string, bool,
+	context.Context, domain.SessionID, domain.SessionMode, domain.SessionMode, string, bool, ...domain.AgentConfig,
 ) (bool, error) {
 	return false, errors.New("commit controller epoch failed")
 }

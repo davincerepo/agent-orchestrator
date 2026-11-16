@@ -243,7 +243,7 @@ type lifecycleRecorder interface {
 	MarkSpawned(ctx context.Context, id domain.SessionID, metadata domain.SessionMetadata) error
 	MarkChatReconnected(ctx context.Context, id domain.SessionID, metadata domain.SessionMetadata) error
 	MarkChatSpawned(ctx context.Context, id domain.SessionID, metadata domain.SessionMetadata, boundary domain.ConversationBranch) error
-	CommitControllerEpoch(ctx context.Context, id domain.SessionID, source, target domain.SessionMode, nativeConversationID string, startFresh bool) (bool, error)
+	CommitControllerEpoch(ctx context.Context, id domain.SessionID, source, target domain.SessionMode, nativeConversationID string, startFresh bool, modelParameters ...domain.AgentConfig) (bool, error)
 	CommitControllerEpochArchivedChat(ctx context.Context, id domain.SessionID, source, target domain.SessionMode, nativeConversationID string, startFresh bool) (bool, error)
 	RestoreControllerEpoch(ctx context.Context, id domain.SessionID, source, target domain.SessionMode, nativeConversationID string, startFresh bool) (bool, error)
 	ApplyActivitySignal(ctx context.Context, id domain.SessionID, signal ports.ActivitySignal) error
@@ -1754,8 +1754,9 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (result doma
 		// The user-visible resolved selection is Model for regular harnesses and
 		// Mode for adapters whose catalog is a mode list (e.g. Amp). If an explicit
 		// Model override exists it wins; otherwise fall back to the resolved Mode.
-		Model:  resolvedModelForMetadata(cfg.Harness, agentConfig, adapterConfig),
-		Effort: agentConfig.Effort,
+		Model:       resolvedModelForMetadata(cfg.Harness, agentConfig, adapterConfig),
+		Effort:      agentConfig.Effort,
+		ServiceTier: adapterConfig.ServiceTier,
 	}
 	if prompt != "" {
 		metadata.LatestUserPromptAt = m.clock()
@@ -1872,6 +1873,9 @@ func (m *Manager) resolveAgentConfigOnce(ctx context.Context, cfg ports.SpawnCon
 	if cfg.EffortOverride {
 		resolved.Effort = requested.Effort
 	}
+	if cfg.Harness != domain.HarnessCodex {
+		resolved.ServiceTier = ""
+	}
 	if cfg.Harness == domain.HarnessGrok && cfg.RequestedMode == domain.SessionModeChat {
 		// Project/role effort may be tuned for another harness or Grok model.
 		// Only an explicit request should override the live ACP model's default;
@@ -1965,7 +1969,10 @@ func (m *Manager) resolveAgentConfigOnce(ctx context.Context, cfg ports.SpawnCon
 		}
 	}
 	if modelChangedWithoutExplicitEffort {
-		if selected == nil || !containsString(selected.Efforts, base.Effort) {
+		// A gateway catalog that never advertised capabilities leaves the
+		// levels unknown, not empty: keep the configured level and let the
+		// agent, which owns the real model metadata, accept or reject it.
+		if selected == nil || !(selected.EffortUnknown || containsString(selected.Efforts, base.Effort)) {
 			resolved.Effort = ""
 		}
 	}
@@ -1980,7 +1987,7 @@ func (m *Manager) resolveAgentConfigOnce(ctx context.Context, cfg ports.SpawnCon
 		}
 		return resolved, nil
 	}
-	if !containsString(selected.Efforts, resolved.Effort) {
+	if resolved.Effort != "" && !selected.EffortUnknown && !containsString(selected.Efforts, resolved.Effort) {
 		return ports.AgentConfig{}, fmt.Errorf("%w %q for model %q", ports.ErrUnsupportedEffort, resolved.Effort, modelID)
 	}
 	return resolved, nil
@@ -2613,6 +2620,9 @@ func effectiveAgentConfig(harness domain.AgentHarness, kind domain.SessionKind, 
 	if harness == domain.HarnessMemcode && validateSpawnModel(harness, merged.Model) != nil {
 		merged.Model = ""
 	}
+	if harnessMatches && override.ServiceTier != "" {
+		merged.ServiceTier = override.ServiceTier
+	}
 	return merged
 }
 
@@ -2639,6 +2649,7 @@ func (m *Manager) sessionLaunchOptions(ctx context.Context, id domain.SessionID)
 
 func restoredAgentConfig(rec domain.SessionRecord, cfg domain.ProjectConfig) ports.AgentConfig {
 	merged := effectiveAgentConfig(rec.Harness, rec.Kind, cfg)
+	merged.ServiceTier = rec.Metadata.ServiceTier
 	// Model and effort are durable session choices for every harness. Empty
 	// values mean provider defaults, not today's project or role defaults.
 	merged.Model = rec.Metadata.Model
@@ -2663,6 +2674,9 @@ func EffectiveSpawnAgentConfig(cfg ports.SpawnConfig, project domain.ProjectConf
 }
 
 func applySpawnAgentConfig(base, override ports.AgentConfig) ports.AgentConfig {
+	if override.ServiceTier != "" {
+		base.ServiceTier = override.ServiceTier
+	}
 	if override.Model != "" {
 		base.Model = override.Model
 	}
@@ -2689,6 +2703,9 @@ func applySpawnAgentConfig(base, override ports.AgentConfig) ports.AgentConfig {
 // reads Config.Mode). The original cfg is left unchanged so callers can still
 // persist the resolved Model separately.
 func normalizeAgentConfigForHarness(harness domain.AgentHarness, cfg ports.AgentConfig) ports.AgentConfig {
+	if harness != domain.HarnessCodex {
+		cfg.ServiceTier = ""
+	}
 	model := strings.TrimSpace(cfg.Model)
 	if model == "" {
 		return cfg

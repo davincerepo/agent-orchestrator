@@ -329,7 +329,8 @@ type ChatStartConfig struct {
 	Model string
 	// Effort is an optional provider-advertised model tuning value; empty
 	// defers to the provider's configured default.
-	Effort string
+	Effort      string
+	ServiceTier string
 	// Permissions is AO's existing per-session approval policy. Drivers map it
 	// onto their provider's native approval and sandbox settings.
 	Permissions PermissionMode
@@ -367,6 +368,7 @@ type ChatResumeConfig struct {
 	ReconnectOnly bool
 	// See ChatStartConfig.ProviderIDsScoped.
 	ProviderIDsScoped      bool
+	ServiceTier            string
 	SessionID              domain.SessionID
 	ProviderConversationID string
 	// FreshIfMissing lets a driver that had to reload ProviderConversationID
@@ -527,6 +529,8 @@ type MessageDeliveryOptions struct {
 // which is what makes this additive — a caller that sets nothing behaves exactly
 // as before.
 type ChatTurnSettings struct {
+	// ServiceTier is an explicit provider tier, including "default" for Fast off.
+	ServiceTier string
 	// Model is the provider's model id, from ChatModel.ID.
 	Model string
 	// Effort is how much reasoning to spend, from ChatModel.Efforts.
@@ -543,7 +547,7 @@ type ChatTurnSettings struct {
 // IsZero reports whether nothing was chosen, so a dispatch can omit the fields
 // entirely rather than sending empty strings the provider would have to interpret.
 func (s ChatTurnSettings) IsZero() bool {
-	return s.Model == "" && s.Effort == "" && s.Approval == ""
+	return s.Model == "" && s.Effort == "" && s.ServiceTier == "" && s.Approval == ""
 }
 
 // ChatModel is one model the provider offers for a conversation.

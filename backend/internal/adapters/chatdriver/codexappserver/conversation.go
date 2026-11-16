@@ -65,6 +65,9 @@ type conversation struct {
 	// A reconnected thread may be on any tier and in either collaboration mode.
 	tierUnknown, planUnknown bool
 	fastTiers                map[string]string
+	threadSettingsKnown      bool
+	threadSettingsRevision   uint64
+	settingsRefresh          *threadSettingsRefresh
 
 	mu            sync.Mutex
 	pending       map[string]*parkedRequest
@@ -142,6 +145,7 @@ func (c *conversation) start(threadID, model, effort string) {
 	c.threadID = threadID
 	c.threadModel = model
 	c.threadEffort = effort
+	c.threadSettingsKnown = model != ""
 	go c.pump()
 }
 
@@ -189,6 +193,7 @@ func (c *conversation) pump() {
 			ThreadID string `json:"threadId"`
 		}
 		_ = json.Unmarshal(n.Params, &scope)
+		c.trackThreadSettings(n)
 		citations.observeNotification(n, c.threadID)
 
 		// The clock is passed in rather than read inside: a rate-limit reset arrives
@@ -367,7 +372,9 @@ func (c *conversation) SendTurn(ctx context.Context, msg ports.ChatUserMessage) 
 	applyTurnSettings(params, msg.Settings, c.readOnly, c.disableNetwork)
 	// A service tier sticks to the thread once set, so leaving the fast tier
 	// has to be said: an explicit null returns the thread to its default.
-	if msg.Settings.Fast {
+	if msg.Settings.ServiceTier != "" {
+		params["serviceTier"] = msg.Settings.ServiceTier
+	} else if msg.Settings.Fast {
 		params["serviceTier"] = cmp.Or(c.fastTiers[msg.Settings.Model], c.fastTiers[c.threadModel], codexFastServiceTier)
 	} else if c.fastTier || c.tierUnknown && c.configuredServiceTier(ctx) == "" {
 		params["serviceTier"] = nil
@@ -389,6 +396,12 @@ func (c *conversation) SendTurn(ctx context.Context, msg ports.ChatUserMessage) 
 		planMode = msg.Settings.Plan
 	}
 	planKnown := params["collaborationMode"] != nil
+	// A new turn can change effective defaults, including fields the provider
+	// resolves itself. Reconfirm on the next visit if no settings event arrives.
+	c.mu.Lock()
+	c.threadSettingsKnown = false
+	c.threadSettingsRevision++
+	c.mu.Unlock()
 
 	var resp struct {
 		Turn struct {
@@ -398,7 +411,7 @@ func (c *conversation) SendTurn(ctx context.Context, msg ports.ChatUserMessage) 
 	if err := c.conn.request(ctx, "turn/start", params, &resp); err != nil {
 		return ports.ChatTurnRef{}, fmt.Errorf("turn/start: %w", err)
 	}
-	c.fastTier = msg.Settings.Fast
+	c.fastTier = msg.Settings.Fast || msg.Settings.ServiceTier == codexFastServiceTier
 	c.planMode = planMode
 	c.tierUnknown, c.planUnknown = false, c.planUnknown && !planKnown
 
@@ -461,6 +474,9 @@ func turnSandboxPolicy(sandbox string) map[string]any {
 // account, and gated by entitlement that AO cannot see. A table in AO would be
 // wrong within a week.
 func (c *conversation) ListModels(ctx context.Context) ([]ports.ChatModel, error) {
+	if err := c.ensureThreadSettings(ctx); err != nil {
+		return nil, err
+	}
 	models, err := listModels(ctx, c.conn)
 	if err != nil {
 		return nil, err
@@ -475,16 +491,27 @@ func (c *conversation) ListModels(ctx context.Context) ([]ports.ChatModel, error
 	c.fastTiers = fastTiers
 	c.sendMu.Unlock()
 	// Thread settings include the user's config; model/list only has generic defaults.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.threadSettingsKnown {
+		return nil, errors.New("Codex thread settings changed while reading models; reopen the session to retry")
+	}
+	// Only confirmed thread settings may replace the catalog's generic defaults.
+	found := false
 	for i := range models {
-		// An omitted turn model inherits thread/start (including config.toml),
-		// not model/list's generic catalog default. If the configured model is
-		// absent, leave no catalog default rather than advertise another model.
-		if c.threadModel != "" {
-			models[i].Default = models[i].ID == c.threadModel
-		}
-		if models[i].ID == c.threadModel && c.threadEffort != "" {
+		models[i].Default = models[i].ID == c.threadModel
+		if models[i].Default {
+			found = true
 			models[i].DefaultEffort = c.threadEffort
 		}
+	}
+	if !found {
+		// A custom/current model can be absent from the catalog. Keep its real
+		// identity visible without inventing supported efforts or speed tiers.
+		models = append(models, ports.ChatModel{
+			ID: c.threadModel, DisplayName: c.threadModel, Default: true,
+			DefaultEffort: c.threadEffort,
+		})
 	}
 	return models, nil
 }

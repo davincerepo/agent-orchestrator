@@ -806,6 +806,7 @@ func (s *Service) startLocked(ctx context.Context, cfg StartConfig) (*Controller
 	if cfg.ProviderConversationID != "" && cfg.ForkFirstStart && cfg.ProviderSwitch == nil {
 		conversation.Settings.Model = cfg.Model
 		conversation.Settings.ReasoningEffort = cfg.Effort
+		conversation.Settings.ServiceTier = cfg.ServiceTier
 		conversation.Settings.ApprovalMode = cfg.Permissions
 		if err := s.store.SetConversationSettings(ctx, conversation.ID, conversation.Settings, s.now()); err != nil {
 			return nil, fmt.Errorf("record initial conversation settings: %w", err)
@@ -819,6 +820,7 @@ func (s *Service) startLocked(ctx context.Context, cfg StartConfig) (*Controller
 	}
 	if cfg.ProviderConversationID != "" {
 		cfg.Effort = conversation.Settings.ReasoningEffort
+		cfg.ServiceTier = conversation.Settings.ServiceTier
 	}
 	if cfg.ProviderConversationID != "" && conversation.Settings.ApprovalMode != "" {
 		cfg.Permissions = conversation.Settings.ApprovalMode
@@ -829,6 +831,7 @@ func (s *Service) startLocked(ctx context.Context, cfg StartConfig) (*Controller
 		}
 		conversation.Settings.Model = cfg.Model
 		conversation.Settings.ReasoningEffort = cfg.Effort
+		conversation.Settings.ServiceTier = cfg.ServiceTier
 		conversation.Settings.ApprovalMode = cfg.Permissions
 		// A switch target's settings are saved by the switch's commit.
 		if cfg.ProviderSwitch == nil {
@@ -876,6 +879,7 @@ func (s *Service) startLocked(ctx context.Context, cfg StartConfig) (*Controller
 			PrepareEnv:             prepareEnv,
 			Model:                  cfg.Model,
 			Effort:                 cfg.Effort,
+			ServiceTier:            cfg.ServiceTier,
 			Permissions:            cfg.Permissions,
 			ReadOnly:               cfg.ReadOnly,
 			SystemPrompt:           providerSystemPrompt,
@@ -894,6 +898,7 @@ func (s *Service) startLocked(ctx context.Context, cfg StartConfig) (*Controller
 			PrepareEnv:            prepareEnv,
 			Model:                 cfg.Model,
 			Effort:                cfg.Effort,
+			ServiceTier:           cfg.ServiceTier,
 			Permissions:           cfg.Permissions,
 			ReadOnly:              cfg.ReadOnly,
 			SystemPrompt:          providerSystemPrompt,
@@ -1758,6 +1763,8 @@ func (s *Service) ArmChatHandoff(
 	if controller.State() == ports.ChatControllerStopped {
 		return nil
 	}
+	controller.configMu.Lock()
+	defer controller.configMu.Unlock()
 	return controller.ArmHandoff(ctx, policy)
 }
 
@@ -2942,6 +2949,12 @@ func (s *Service) SetTurnSettingsForOwner(ctx context.Context, owner domain.Conv
 func (s *Service) setTurnSettings(ctx context.Context, controller *Controller, owner domain.ConversationOwner, settings domain.ConversationSettings) (domain.ConversationSettings, error) {
 	controller.configMu.Lock()
 	defer controller.configMu.Unlock()
+	if controller.handoffActive() {
+		return domain.ConversationSettings{}, ErrControllerHandoff
+	}
+	if err := validateModelParameters(ctx, controller.harness, controller.conv, settings); err != nil {
+		return domain.ConversationSettings{}, err
+	}
 	// The turn-settings endpoint does not own provider session mode choices.
 	previous := controller.Settings()
 	if owner.Kind == domain.ConversationOwnerReview && settings.ApprovalMode != previous.ApprovalMode {

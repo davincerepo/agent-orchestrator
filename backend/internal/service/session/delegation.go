@@ -38,6 +38,7 @@ type DelegateTaskInput struct {
 	ApprovalMode      domain.PermissionMode
 	RequestedMode     domain.SessionMode
 	AccountID         string
+	ServiceTier       string
 	Attachments       []ports.SpawnAttachment
 	TaskPreparation   domain.TaskPreparationToken
 	ClientRequestID   string
@@ -113,6 +114,7 @@ func (s *Service) DelegateTask(ctx context.Context, in DelegateTaskInput) (Deleg
 			Model:       strings.TrimSpace(in.Model),
 			Effort:      effort,
 			Permissions: in.ApprovalMode,
+			ServiceTier: in.ServiceTier,
 		},
 		EffortOverride: effortOverride,
 		RequestedMode:  in.RequestedMode,

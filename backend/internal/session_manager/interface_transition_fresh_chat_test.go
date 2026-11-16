@@ -161,7 +161,12 @@ func TestInterfaceTransitionUnpromptedChatRoundTrip(t *testing.T) {
 				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(path, []byte("{\"type\":\"user\",\"message\":\"hello\"}\n"), 0o600); err != nil {
+				transcript := "{\"type\":\"user\",\"message\":\"hello\"}\n"
+				if tc.harness == domain.HarnessCodex {
+					// Real Codex rollouts identify their owner before message records.
+					transcript = fmt.Sprintf("{\"type\":\"session_meta\",\"payload\":{\"id\":%q}}\n", wantNativeID) + transcript
+				}
+				if err := os.WriteFile(path, []byte(transcript), 0o600); err != nil {
 					t.Fatal(err)
 				}
 				rec.Metadata.NativeTranscriptPath = path

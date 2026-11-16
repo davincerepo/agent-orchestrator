@@ -752,6 +752,7 @@ func TestGetConfigSpecReportsModelField(t *testing.T) {
 			Type:        ports.ConfigFieldString,
 			Description: "Reasoning effort override passed to `codex -c model_reasoning_effort`.",
 		},
+		{Key: "serviceTier", Type: ports.ConfigFieldString, Description: "default (Fast off) or priority (Fast on)."},
 	}
 	if !reflect.DeepEqual(spec.Fields, want) {
 		t.Fatalf("config fields\nwant: %#v\n got: %#v", want, spec.Fields)
