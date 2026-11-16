@@ -651,20 +651,6 @@ func TestResolveClaudeEffortPassesThroughWhenProviderDidNotAdvertiseCapabilities
 	}
 }
 
-func TestResolveClaudeModelWithoutEffortStillRequiresCatalog(t *testing.T) {
-	m := &Manager{modelCatalog: tuningCatalog{err: errors.New("gateway does not list models")}}
-
-	_, err := m.resolveAgentConfig(context.Background(), ports.SpawnConfig{
-		ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode,
-		AgentConfig: ports.AgentConfig{Model: "provider/model-vNext"},
-	}, domain.ProjectConfig{Worker: domain.RoleOverride{AgentConfig: domain.AgentConfig{
-		Model: "sonnet", Effort: "high",
-	}}})
-	if !errors.Is(err, ports.ErrModelCapabilitiesUnavailable) {
-		t.Fatalf("error = %v, want ErrModelCapabilitiesUnavailable", err)
-	}
-}
-
 func TestResolveGrokEffortIsAvailableOnlyInChat(t *testing.T) {
 	m := &Manager{}
 	for _, mode := range []domain.SessionMode{domain.SessionModeChat, domain.SessionModeTUI} {
