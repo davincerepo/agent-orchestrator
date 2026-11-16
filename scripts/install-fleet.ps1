@@ -265,7 +265,15 @@ function Invoke-FleetBuild([string]$RepositoryRoot) {
         if (-not (Test-Path -LiteralPath $npm)) { throw "npm CLI is missing: $npm" }
         foreach ($project in @('packages\product-ui', 'frontend')) {
             Write-Host "Preparing dependencies: $project"
-            & $toolPaths.node $npm ci --prefix (Join-Path $RepositoryRoot $project)
+            # frontend needs --ignore-scripts: better-sqlite3 v13 ships Node-API
+            # prebuilds and no install script, but npm still auto-runs node-gyp for
+            # its binding.gyp, which fails without a Visual Studio install. Nothing
+            # in the packaging path needs lifecycle scripts (the packager fetches
+            # the Electron zip itself via @electron/get; esbuild binaries come from
+            # platform optional dependencies).
+            $extraArgs = @()
+            if ($project -eq 'frontend') { $extraArgs = @('--ignore-scripts') }
+            & $toolPaths.node $npm ci --prefix (Join-Path $RepositoryRoot $project) @extraArgs
             if ($LASTEXITCODE -ne 0) { throw "npm ci failed: $project (exit $LASTEXITCODE)" }
         }
         Write-Host 'Building Fleet from the current main-fleet checkout...'
