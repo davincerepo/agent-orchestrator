@@ -12,6 +12,8 @@
 | `fleet/feat/model-parameters` | 官方 Effort、Codex Fast、参数恢复与反显 | [model-parameters.md](model-parameters.md) |
 | `fleet/feat/prompt-refresh` | 会话提示词重载：复制 provider 会话替换 standing prompt（codex/claude-code Chat） | [prompt-refresh.md](prompt-refresh.md) |
 | `fleet/feat/portable` | 免安装、数据与进程隔离、AO Fleet 品牌 | [fleet-portable.md](fleet-portable.md) |
+| `fleet/feat/usage-project-hourly` | 项目内按会话、harness、模型和 UTC 小时聚合用量 | [usage-project-hourly.md](usage-project-hourly.md) |
+| `fleet/feat/provider-events-retention` | provider 原始事件归档的按龄清理与总量上限 | [provider-events-retention.md](provider-events-retention.md) |
 
 `fleet/feat/session-import` 仅保留历史参考，不参与集成。
 
