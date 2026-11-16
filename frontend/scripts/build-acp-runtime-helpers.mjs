@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, unlinkSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, win32 } from "node:path";
 
 const ROOT_BUILD_TOOLS = ["corepack", "corepack.cmd", "npm", "npm.cmd", "npx", "npx.cmd"];
@@ -40,11 +40,42 @@ export function npmInvocation(
 	return { command: "npm", args };
 }
 
-// The 0.70-era adapter patches are retired: claude-agent-acp 0.101 publishes
-// retry timing in the session-failure title natively and refines context
-// occupancy from the SDK's getContextUsage on its own. Both were the reasons
-// AO patched the pinned dist during packaging; if a future pin regresses
-// either behavior, reintroduce a narrow block patch rather than a broad one.
+/**
+ * Preserve Claude's API-retry backoff in the ACP session-failure extension.
+ *
+ * claude-agent-acp 0.93 reports retry count and no-response timing, but still
+ * drops the SDK's general retry_delay_ms before the event reaches ACP clients.
+ * The narrow block match is an upgrade tripwire: if the pinned adapter changes,
+ * packaging fails instead of silently returning to an unobservable retry loop.
+ */
+export function patchClaudeRetryDetails(adapterPath) {
+	const source = readFileSync(adapterPath, "utf8");
+	const caseStart = source.indexOf('case "api_retry": {');
+	const caseEnd = source.indexOf('case "model_refusal_fallback":', caseStart);
+	if (caseStart < 0 || caseEnd < 0) {
+		throw new Error("claude-agent-acp no longer contains the expected api_retry block");
+	}
+
+	let block = source.slice(caseStart, caseEnd);
+	if (block.includes("const retryDetails =")) return false;
+
+	const original = 'await publishSessionFailure(kind, { title, severity: "warning" });';
+	if (block.indexOf(original) < 0 || block.indexOf(original) !== block.lastIndexOf(original)) {
+		throw new Error("claude-agent-acp api_retry block no longer matches AO's retry patch");
+	}
+
+	const replacement = [
+		"const retryDelay = message.retry_delay_ms >= 1000",
+		"                                    ? `${Number((message.retry_delay_ms / 1000).toFixed(1))}s`",
+		"                                    : `${message.retry_delay_ms}ms`;",
+		'                                const retryDetails = `${message.error_status === null ? "Connection error." : `API error ${message.error_status}.`} Trying again in ${retryDelay}.`;',
+		'                                await publishSessionFailure(kind, { title, severity: "warning", details: retryDetails });',
+	].join("\n");
+	block = block.replace(original, replacement);
+
+	writeFileSync(adapterPath, source.slice(0, caseStart) + block + source.slice(caseEnd));
+	return true;
+}
 
 export function pruneNodeDistribution(nodeRoot) {
 	// The Unix archives expose npm/corepack as bin/ symlinks into lib/. Remove
@@ -84,7 +115,10 @@ export function archiveExtraction(
 	if (platform === "win32") {
 		if (!systemRoot) throw new Error("SystemRoot is required for Windows archive extraction");
 		// Git Bash can put GNU tar ahead of System32 on PATH.
-		return { command: win32.join(systemRoot, "System32", "tar.exe"), args: ["-xf", archivePath, "-C", workDir] };
+		return {
+			command: win32.join(systemRoot, "System32", "tar.exe"),
+			args: ["-xf", archivePath, "-C", workDir],
+		};
 	}
 	return { command: "tar", args: ["-xzf", archivePath, "-C", workDir] };
 }
