@@ -13,5 +13,6 @@ it("ignores a baked official API override and waits for Fleet's handshake", asyn
 	expect(fetch).not.toHaveBeenCalled();
 	setApiBaseUrl("http://127.0.0.1:13001");
 	await apiClient.GET("/api/v1/projects");
-	expect(String(fetch.mock.calls[0][0])).toBe("http://127.0.0.1:13001/api/v1/projects");
+	const request = fetch.mock.calls[0][0];
+	expect(request instanceof Request ? request.url : String(request)).toBe("http://127.0.0.1:13001/api/v1/projects");
 });
