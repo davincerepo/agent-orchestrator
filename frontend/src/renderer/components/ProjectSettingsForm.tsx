@@ -25,6 +25,7 @@ import { RequiredAgentField } from "./CreateProjectAgentSheet";
 import { buildIntake } from "./IntakeFields";
 import { ReviewerSelect, reviewerTrustWarning } from "./ReviewerSelect";
 import { ProjectSettingsEditor, type ProjectAgentPickerProps, type ProjectSettingsDraft } from "./ProjectSettingsEditor";
+import type { ServiceTier } from "./settings/ModelParametersControl";
 import { CloudProjectSettingsAdapter } from "./CloudProjectSettingsForm";
 import { SettingsRow } from "./settings/SettingsRow";
 import { Button } from "./ui/button";
@@ -159,9 +160,11 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 		workerModel: config.worker?.agentConfig?.model ?? config.agentConfig?.model ?? "",
 		workerEffort: config.worker?.agentConfig?.effort ?? config.agentConfig?.effort ?? "",
 		workerPermissions: config.worker?.agentConfig?.permissions ?? config.agentConfig?.permissions ?? "",
+		workerServiceTier: config.worker?.agentConfig?.serviceTier as ServiceTier | undefined ?? config.agentConfig?.serviceTier as ServiceTier | undefined,
 		orchestratorModel: config.orchestrator?.agentConfig?.model ?? config.agentConfig?.model ?? "",
 		orchestratorEffort: config.orchestrator?.agentConfig?.effort ?? config.agentConfig?.effort ?? "",
 		orchestratorPermissions: config.orchestrator?.agentConfig?.permissions ?? config.agentConfig?.permissions ?? "",
+		orchestratorServiceTier: config.orchestrator?.agentConfig?.serviceTier as ServiceTier | undefined ?? config.agentConfig?.serviceTier as ServiceTier | undefined,
 		workerMode: config.worker?.agentConfig?.mode ?? config.agentConfig?.mode ?? "",
 		orchestratorMode: config.orchestrator?.agentConfig?.mode ?? config.agentConfig?.mode ?? "",
 		reviewerHarness: config.reviewers?.[0]?.harness ?? "",
@@ -169,6 +172,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 		reviewerMode: config.reviewers?.[0]?.agentConfig?.mode ?? config.agentConfig?.mode ?? "",
 		reviewerEffort: config.reviewers?.[0]?.agentConfig?.effort ?? config.agentConfig?.effort ?? "",
 		reviewerPermissions: config.reviewers?.[0]?.agentConfig?.permissions ?? config.agentConfig?.permissions ?? "",
+		reviewerServiceTier: config.reviewers?.[0]?.agentConfig?.serviceTier as ServiceTier | undefined ?? config.agentConfig?.serviceTier as ServiceTier | undefined,
 		autoReview: config.autoReview ?? false,
 		workersRequestReview: config.workersRequestReview ?? false,
 		intakeEnabled: intake.enabled ?? false,
@@ -192,7 +196,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 					worker: {
 						...config.worker,
 						agent: values.workerAgent,
-						agentConfig: buildRoleAgentConfig(config.worker?.agentConfig, values.workerModel, values.workerMode, values.workerEffort, values.workerPermissions),
+						agentConfig: buildRoleAgentConfig(config.worker?.agentConfig, values.workerModel, values.workerMode, values.workerEffort, values.workerPermissions, values.workerServiceTier),
 					},
 					orchestrator: {
 						...config.orchestrator,
@@ -217,7 +221,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 					worker: {
 						...config.worker,
 						agent: values.workerAgent,
-						agentConfig: buildRoleAgentConfig(config.worker?.agentConfig, values.workerModel, values.workerMode, values.workerEffort, values.workerPermissions),
+						agentConfig: buildRoleAgentConfig(config.worker?.agentConfig, values.workerModel, values.workerMode, values.workerEffort, values.workerPermissions, values.workerServiceTier),
 					},
 					orchestrator: {
 						...config.orchestrator,
@@ -391,12 +395,15 @@ function buildRoleAgentConfig(
 	mode: string,
 	effort: string,
 	permissions: string,
+	serviceTier?: ServiceTier,
 ): components["schemas"]["AgentConfig"] | undefined {
 	const next = { ...existing };
 	if (model) next.model = model;
 	else delete next.model;
 	if (mode) next.mode = mode;
 	else delete next.mode;
+	if (serviceTier) next.serviceTier = serviceTier;
+	else delete next.serviceTier;
 	if (effort) next.effort = effort;
 	else delete next.effort;
 	if (permissions) next.permissions = permissions as components["schemas"]["AgentConfig"]["permissions"];

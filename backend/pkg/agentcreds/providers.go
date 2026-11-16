@@ -154,6 +154,11 @@ func parseAnthropicCompatibleModels(body []byte, claudeOnly bool) ([]Model, erro
 			ID:          entry.ID,
 			DisplayName: strings.TrimSpace(entry.DisplayName),
 			Efforts:     supportedEfforts(entry.Capabilities.Effort),
+			// A gateway that returns no capabilities at all has not answered
+			// the effort question. Its model IDs are provider-owned, so the
+			// agent in front of it — not this response — knows which levels
+			// they accept.
+			EffortUnknown: !claudeOnly && entry.Capabilities.Effort == nil,
 		})
 	}
 	return models, nil

@@ -626,14 +626,23 @@ func (m *Manager) runInterfaceTransition(
 			fail("LIFECYCLE_UNAVAILABLE", fmt.Errorf("lifecycle manager is unavailable"))
 			return
 		}
+		parameterCtx, parameterCancel := context.WithTimeout(ctx, 10*time.Second)
+		modelParameters, err := m.interfaceModelParameters(parameterCtx, rec, transition.NativeConversationID)
+		parameterCancel()
+		if err != nil {
+			fail("MODEL_PARAMETERS_UNAVAILABLE", err)
+			return
+		}
 		// A degraded identity-reset handoff may leave the source Chat archived
 		// with its messages; the strict path must still prove the root untouched.
-		commitEpoch := m.lcm.CommitControllerEpoch
+		var changed bool
 		if transition.DegradedKind != "" {
-			commitEpoch = m.lcm.CommitControllerEpochArchivedChat
+			changed, err = m.lcm.CommitControllerEpochArchivedChat(ctx, rec.ID, transition.SourceMode,
+				transition.TargetMode, transition.NativeConversationID, transition.NativeConversationID == "")
+		} else {
+			changed, err = m.lcm.CommitControllerEpoch(ctx, rec.ID, transition.SourceMode,
+				transition.TargetMode, transition.NativeConversationID, transition.NativeConversationID == "", modelParameters...)
 		}
-		changed, err := commitEpoch(ctx, rec.ID, transition.SourceMode,
-			transition.TargetMode, transition.NativeConversationID, transition.NativeConversationID == "")
 		if err != nil || !changed {
 			if err == nil {
 				err = fmt.Errorf("session mode compare-and-swap failed")

@@ -149,8 +149,8 @@ func TestClaudeCatalogReturnsNoInventedModelsWithProviderError(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			catalog, err := discoverClaudeCatalog(context.Background(), claudeRequest(t), tc.list)
-			if len(catalog.Models) != 0 {
-				t.Fatalf("failed discovery invented models: %+v", catalog.Models)
+			if len(catalog.Models) == 0 {
+				t.Fatalf("failed discovery left no fallback aliases: %+v", catalog.Models)
 			}
 			if !catalog.AllowCustom {
 				t.Fatal("manual model entry must remain available without a cache")
@@ -191,8 +191,19 @@ func TestClaudeGatewayCatalogFailureLeavesFallbackToCache(t *testing.T) {
 	if catalog.CustomModelEntry != ports.CustomModelEntryDirect || !catalog.AllowCustom {
 		t.Fatalf("custom entry = (%q, %v), want direct enabled", catalog.CustomModelEntry, catalog.AllowCustom)
 	}
-	if len(catalog.Models) != 0 {
-		t.Fatalf("models = %#v, want no replacement list on discovery failure", catalog.Models)
+	if len(catalog.Models) == 0 {
+		t.Fatalf("models = %#v, want fallback aliases on discovery failure", catalog.Models)
+	}
+	for _, want := range []string{"gateway-primary", "gateway-opus", "gateway-shared", "gateway-fast"} {
+		found := false
+		for _, model := range catalog.Models {
+			if model.ID == want && model.EffortUnknown {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("fallback lacks %s with unknown effort: %#v", want, catalog.Models)
+		}
 	}
 }
 
@@ -248,6 +259,7 @@ func TestProviderEffortsSurviveNormalization(t *testing.T) {
 			{ID: "claude-opus-5", Efforts: []string{"low", "medium", "high", "xhigh", "max"}},
 			{ID: "claude-opus-4-6", Efforts: []string{"low", "medium", "high", "max"}},
 			{ID: "claude-sonnet-4-5-20250929"},
+			{ID: "glm-5.3", EffortUnknown: true},
 		}, nil
 	}
 	catalog, err := discoverClaudeCatalog(context.Background(), claudeRequest(t), list)
@@ -263,5 +275,10 @@ func TestProviderEffortsSurviveNormalization(t *testing.T) {
 	}
 	if got["claude-sonnet-4-5-20250929"] != 0 {
 		t.Fatalf("a model with no efforts must carry none, got %d", got["claude-sonnet-4-5-20250929"])
+	}
+	for _, model := range catalog.Models {
+		if model.ID == "glm-5.3" && !model.EffortUnknown {
+			t.Fatalf("gateway model without advertised capabilities lost its unknown-effort marker: %+v", model)
+		}
 	}
 }

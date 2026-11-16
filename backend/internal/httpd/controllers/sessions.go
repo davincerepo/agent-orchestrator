@@ -274,6 +274,7 @@ func (c *SessionsController) Register(r chi.Router) {
 	r.Post("/sessions/{sessionId}/restore", c.restore)
 	r.Post("/sessions/{sessionId}/exit-agent", c.exitAgent)
 	r.Post("/sessions/{sessionId}/resume-agent", c.resumeAgent)
+	r.Get("/sessions/{sessionId}/terminal-model-parameters", c.terminalModelParameters)
 	r.Get("/sessions/{sessionId}/interface-transition", c.interfaceTransitionStatus)
 	r.Post("/sessions/{sessionId}/interface-transition", c.startInterfaceTransition)
 	r.Delete("/sessions/{sessionId}/interface-transition", c.cancelInterfaceTransition)
@@ -2344,6 +2345,7 @@ func (c *SessionsController) delegateTask(w http.ResponseWriter, r *http.Request
 		AccountID:         strings.TrimSpace(in.AccountID),
 		Attachments:       attachments,
 		TaskPreparation:   domain.TaskPreparationToken(strings.TrimSpace(in.TaskPreparation)),
+		ServiceTier:       in.ServiceTier,
 	})
 	if err != nil {
 		envelope.WriteError(w, r, err)

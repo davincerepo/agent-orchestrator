@@ -286,6 +286,43 @@ func TestUnsupportedEffortIsEmptyNotPartial(t *testing.T) {
 	}
 }
 
+// A gateway whose /v1/models carries no capabilities has not answered the
+// effort question. That is unknown — the agent in front of it owns the real
+// model metadata — and must not collapse into the first-party "supports none"
+// verdict, which would make every configured level look unsupported.
+func TestGatewayModelsWithoutCapabilitiesMarkEffortUnknown(t *testing.T) {
+	body := `{"data":[
+		{"id":"glm-5.3","display_name":"GLM-5.3"},
+		{"id":"glm-4.5-air","capabilities":{"effort":{"supported":false}}},
+		{"id":"kimi-k2","capabilities":{"effort":{"supported":true,"high":{"supported":true}}}}
+	]}`
+	models, err := parseGatewayModels([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]Model{}
+	for _, model := range models {
+		byID[model.ID] = model
+	}
+	if model := byID["glm-5.3"]; !model.EffortUnknown || model.Efforts != nil {
+		t.Fatalf("gateway model without capabilities = %+v, want unknown effort", model)
+	}
+	if model := byID["glm-4.5-air"]; model.EffortUnknown {
+		t.Fatalf("explicitly unsupported effort must stay a real answer, got %+v", model)
+	}
+	if model := byID["kimi-k2"]; model.EffortUnknown || len(model.Efforts) != 1 || model.Efforts[0] != "high" {
+		t.Fatalf("advertised gateway efforts = %+v, want the advertised list", model)
+	}
+
+	firstParty, err := parseAnthropicModels([]byte(`{"data":[{"id":"claude-unknown-next"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstParty[0].EffortUnknown {
+		t.Fatalf("first-party absent effort stays the documented no-effort answer, got %+v", firstParty[0])
+	}
+}
+
 // The API returns effort as an object, so order has to be imposed or the
 // dropdown reshuffles between requests.
 func TestEffortOrderIsStableAndAscending(t *testing.T) {

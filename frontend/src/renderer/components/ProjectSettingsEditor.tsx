@@ -8,6 +8,7 @@ import { deriveRepoHost, deriveRepoPath, IntakeFields, intakeNeedsRule } from ".
 import { ProductExternalLink } from "./ProductExternalLink";
 import { AgentModelField, ProjectAutoReviewToggle, ProjectCoAuthorCommitsToggle, ProjectWorkersRequestReviewToggle } from "./settings/ProjectAgentRoleControls";
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
+import type { ServiceTier } from "./settings/ModelParametersControl";
 import { Button } from "./ui/button";
 
 export type ProjectSettingsDraft = {
@@ -26,6 +27,10 @@ export type ProjectSettingsDraft = {
 	workerEffort: string;
 	orchestratorEffort: string;
 	reviewerEffort: string;
+	/** Fleet's durable Fast tier per role (Codex only). */
+	workerServiceTier?: ServiceTier;
+	orchestratorServiceTier?: ServiceTier;
+	reviewerServiceTier?: ServiceTier;
 	workerPermissions: string;
 	orchestratorPermissions: string;
 	reviewerPermissions: string;
@@ -69,12 +74,13 @@ type RoleFields = {
 	model: "workerModel" | "orchestratorModel" | "reviewerModel";
 	mode: "workerMode" | "orchestratorMode" | "reviewerMode";
 	effort: "workerEffort" | "orchestratorEffort" | "reviewerEffort";
+	serviceTier: "workerServiceTier" | "orchestratorServiceTier" | "reviewerServiceTier";
 	permissions: "workerPermissions" | "orchestratorPermissions" | "reviewerPermissions";
 };
 const roleFields: Record<ProjectSettingsRole, RoleFields> = {
-	worker: { agent: "workerAgent", model: "workerModel", mode: "workerMode", effort: "workerEffort", permissions: "workerPermissions" },
-	orchestrator: { agent: "orchestratorAgent", model: "orchestratorModel", mode: "orchestratorMode", effort: "orchestratorEffort", permissions: "orchestratorPermissions" },
-	reviewer: { agent: "reviewerHarness", model: "reviewerModel", mode: "reviewerMode", effort: "reviewerEffort", permissions: "reviewerPermissions" },
+	worker: { agent: "workerAgent", model: "workerModel", mode: "workerMode", effort: "workerEffort", serviceTier: "workerServiceTier", permissions: "workerPermissions" },
+	orchestrator: { agent: "orchestratorAgent", model: "orchestratorModel", mode: "orchestratorMode", effort: "orchestratorEffort", serviceTier: "orchestratorServiceTier", permissions: "orchestratorPermissions" },
+	reviewer: { agent: "reviewerHarness", model: "reviewerModel", mode: "reviewerMode", effort: "reviewerEffort", serviceTier: "reviewerServiceTier", permissions: "reviewerPermissions" },
 };
 
 // Both persistence adapters render this page. Drafts, validation, autosave and
@@ -203,7 +209,7 @@ export function ProjectSettingsEditor({ initialValues, section, capabilities, de
 					// model and effort when that agent is also the reviewer. Show that, and
 					// keep it when the user pins the reviewer by editing one field.
 					const inheritsWorker = role === "reviewer" && !selectedAgent && agent !== "" && agent === draft.workerAgent;
-					const updateConfig = (key: RoleFields["model"] | RoleFields["mode"] | RoleFields["effort"] | RoleFields["permissions"], value: string) => setDraft((current) => ({
+					const updateConfig = (key: RoleFields["model"] | RoleFields["mode"] | RoleFields["effort"] | RoleFields["permissions"] | RoleFields["serviceTier"], value: string) => setDraft((current) => ({
 						...current,
 						...(role === "reviewer" && !current.reviewerHarness && agent
 							? { reviewerHarness: agent, ...(agent === current.workerAgent ? { reviewerModel: current.workerModel, reviewerEffort: current.workerEffort } : {}) }
@@ -225,7 +231,9 @@ export function ProjectSettingsEditor({ initialValues, section, capabilities, de
 							supportedEfforts={capabilities.runtimeDefaults ? agent === "codex" ? ["low", "medium", "high", "xhigh", "max"] : agent === "claude-code" ? ["low", "medium", "high", "max"] : undefined : undefined}
 							emptyLabel={capabilities.runtimeDefaults && agent === "" ? t("settings.cloudProject.sessionModel") : undefined}
 							independentMode={capabilities.runtimeDefaults && agent === "cursor"}
-							onModelChange={(value) => updateConfig(fields.model, value)} onModeChange={(value) => updateConfig(fields.mode, value)} onEffortChange={(value) => updateConfig(fields.effort, value)} onValidityChange={(valid) => setValidity((current) => current[role] === valid ? current : { ...current, [role]: valid })} />
+							onModelChange={(value) => updateConfig(fields.model, value)} onModeChange={(value) => updateConfig(fields.mode, value)} onEffortChange={(value) => updateConfig(fields.effort, value)}
+					serviceTier={inheritsWorker ? draft.workerServiceTier : draft[fields.serviceTier]}
+					onServiceTierChange={agent === "codex" ? (value) => updateConfig(fields.serviceTier, value) : undefined} onValidityChange={(valid) => setValidity((current) => current[role] === valid ? current : { ...current, [role]: valid })} />
 							{capabilities.runtimeDefaults && agent === "cursor" && <SettingsOptionMenu aria-label={t(`settings.models.${role}Mode`)} value={draft[fields.mode]} triggerClassName="w-fit" options={[{ value: "", label: t("settings.cloudProject.agentMode") }, { value: "plan", label: t("settings.cloudProject.plan") }, { value: "ask", label: t("settings.cloudProject.ask") }]} onChange={(value) => updateConfig(fields.mode, value)} />}
 						</div></div></ProjectSettingsRow>
 						<ProjectSettingsRow label={t("settings.project.approval")}><div className="min-w-0"><ProjectRolePermissions role={role} agent={agent} value={draft[fields.permissions]} runtimeDefaults={capabilities.runtimeDefaults} onChange={updatePermissions} /></div></ProjectSettingsRow>

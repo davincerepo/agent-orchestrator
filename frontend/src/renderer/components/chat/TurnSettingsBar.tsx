@@ -1,3 +1,4 @@
+import { supportsFast, resolveServiceTier } from "../settings/ModelParametersControl";
 /**
  * What the next turn will be sent with: model, reasoning effort, approval mode.
  *
@@ -509,6 +510,7 @@ export function TurnSettingsBar({
 					{!unified && nativeModelMenu && onChange ? (
 						<ModelEffortPicker
 							models={harness === "claude-code" ? displayModels.filter((model) => model.id !== "default") : displayModels}
+							serviceTierSupported={harness === "codex"}
 							settings={settings}
 							onChange={onChange}
 							disabled={optionDisabled}
@@ -762,6 +764,7 @@ function claudeChoiceLabels(catalog: { id: string; displayName: string }[]) {
 
 function ModelEffortPicker({
 	models,
+	serviceTierSupported,
 	settings,
 	onChange,
 	disabled,
@@ -780,6 +783,7 @@ function ModelEffortPicker({
 	onChangeConfigOption,
 }: {
 	models: ChatModel[];
+	serviceTierSupported?: boolean;
 	settings: TurnSettings;
 	onChange: (next: TurnSettings) => void;
 	disabled?: boolean;
@@ -802,6 +806,9 @@ function ModelEffortPicker({
 	const effortChoices = useMemo(() => efforts.map((value) => ({ value })), [efforts]);
 	const savedEffort = settings.reasoningEffort === "default" ? "" : settings.reasoningEffort ?? "";
 
+	const parameterModel = settings.model ? models.find((m) => m.id === settings.model) : models.find((m) => m.default);
+	const fast = serviceTierSupported && supportsFast(parameterModel);
+	const tier = resolveServiceTier(parameterModel, settings.serviceTier);
 	return (
 		<OptionMenu>
 				<OptionMenuTrigger variant="ghost"
@@ -835,7 +842,7 @@ function ModelEffortPicker({
 									searchActive={model.id === searchActiveID}
 									radio
 									disabled={Boolean(model.unavailableReason)}
-									onSelect={() => onChange({ ...settings, model: model.id, reasoningEffort: undefined })}
+									onSelect={() => onChange({ ...settings, model: model.id, reasoningEffort: undefined, ...(serviceTierSupported ? { serviceTier: resolveServiceTier(model, settings.serviceTier) } : {}) })}
 									className={cn("text-xs", model.id === settings.model ? "text-foreground" : "text-muted-foreground")}
 								>
 									<UnavailableLabel label={model.displayName} reason={model.unavailableReason} />
@@ -863,6 +870,14 @@ function ModelEffortPicker({
 						</OptionMenuSubContent>
 					</OptionMenuSub>
 				) : null}
+                {fast ? (
+                    <OptionMenuSub>
+                        <OptionMenuSubTrigger label="Fast" value={tier === "priority" ? "On" : "Off"} />
+                        <OptionMenuSubContent className={CHAT_MENU_CLASS}>
+                            {(["default", "priority"] as const).map((value) => <OptionMenuItem key={value} radio active={tier === value} onSelect={() => onChange({ ...settings, serviceTier: value })}>{value === "priority" ? "On" : "Off"}</OptionMenuItem>)}
+                        </OptionMenuSubContent>
+                    </OptionMenuSub>
+                ) : null}
 				{executionMode && onChangeConfigOption ? (
 					<PlanModeToggle option={executionMode} planReturn={planReturn} onChange={onChangeConfigOption} />
 				) : null}

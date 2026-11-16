@@ -682,6 +682,7 @@ type SpawnSessionRequest struct {
 	// ParentSessionID is supplied by `ao spawn` inside an AO session. The daemon
 	// validates it before deriving inherited worker settings.
 	ParentSessionID domain.SessionID       `json:"parentSessionId,omitempty"`
+	ServiceTier     string                 `json:"serviceTier,omitempty" enum:"default,priority"`
 	TrackerProvider domain.TrackerProvider `json:"trackerProvider,omitempty" enum:"github,gitlab"`
 	Kind            domain.SessionKind     `json:"kind,omitempty" enum:"worker,orchestrator"`
 	Harness         domain.AgentHarness    `json:"harness,omitempty" enum:"claude-code,codex,aider,opencode,opencode-v2,grok,droid,amp,agy,crush,cursor,qwen,gemini,copilot,goose,auggie,continue,devin,cline,kimi,muse,kiro,kilocode,vibe,pi,kimchi,omp,fx,prime-agent,autohand,unreal-agent,codewhale,mimo-code,minimax-code,deepseek-harness,openhands,command-code,docker-agent,memcode,hermes,stakpak"`
@@ -1490,7 +1491,8 @@ type DelegateTaskRequest struct {
 	Model      string              `json:"model,omitempty" maxLength:"256"`
 	// Effort is an explicit, provider-advertised model tuning override. Nil
 	// inherits the project default; an empty string selects the provider default.
-	Effort *string `json:"effort,omitempty" maxLength:"64"`
+	Effort      *string `json:"effort,omitempty" maxLength:"64"`
+	ServiceTier string  `json:"serviceTier,omitempty" enum:"default,priority"`
 	// ApprovalMode is an optional per-session override. The UI uses the explicit
 	// bypass value only after the user accepts an approval-less Chat fallback.
 	ApprovalMode domain.PermissionMode `json:"approvalMode,omitempty" enum:"default,accept-edits,auto,bypass-permissions"`
@@ -3684,6 +3686,7 @@ type ConversationSkillResponse struct {
 // Every field is optional and an empty value means "use the provider's default",
 // so clearing a choice and never making one are the same thing.
 type ConversationTurnSettingsPayload struct {
+	ServiceTier     string `json:"serviceTier,omitempty" enum:"default,priority"`
 	Model           string `json:"model,omitempty"`
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 	ApprovalMode    string `json:"approvalMode,omitempty" enum:"default,accept-edits,auto,bypass-permissions"`
@@ -4715,4 +4718,13 @@ type ForkSessionRequest struct {
 type ForkSessionResponse struct {
 	SessionID   domain.SessionID `json:"sessionId"`
 	DisplayName string           `json:"displayName"`
+}
+
+// TerminalModelParametersResponse contains only observed native settings.
+// Empty fields are unknown; they are never catalog or project defaults.
+type TerminalModelParametersResponse struct {
+	Supported       bool   `json:"supported"`
+	Model           string `json:"model,omitempty"`
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	ServiceTier     string `json:"serviceTier,omitempty" enum:",default,priority"`
 }

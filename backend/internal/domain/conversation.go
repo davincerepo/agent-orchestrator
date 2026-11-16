@@ -529,6 +529,7 @@ type ConversationSettings struct {
 	Model string `json:"model,omitempty"`
 	// ReasoningEffort is how much thinking to spend, from the model's own list.
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	ServiceTier     string `json:"serviceTier,omitempty"`
 	// FastMode asks for the provider's faster tier. It is held for the life of
 	// the controller and not stored: a restart returns to the standard tier,
 	// which is the cheaper way to be wrong.

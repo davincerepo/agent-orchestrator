@@ -863,6 +863,7 @@ func (c *ConversationsController) setSettings(w http.ResponseWriter, r *http.Req
 		domain.SessionID(chi.URLParam(r, "sessionId")), domain.ConversationSettings{
 			Model:           req.Model,
 			ReasoningEffort: req.ReasoningEffort,
+			ServiceTier:     req.ServiceTier,
 			ApprovalMode:    approval,
 
 			FastMode:          req.FastMode,
@@ -932,6 +933,7 @@ func turnSettingsPayload(settings domain.ConversationSettings) ConversationTurnS
 	return ConversationTurnSettingsPayload{
 		Model:           settings.Model,
 		ReasoningEffort: settings.ReasoningEffort,
+		ServiceTier:     settings.ServiceTier,
 		ApprovalMode:    string(settings.ApprovalMode),
 
 		FastMode:          settings.FastMode,
@@ -1277,6 +1279,8 @@ func writeConversationError(w http.ResponseWriter, r *http.Request, err error) {
 
 func writeConversationErrorWithCode(w http.ResponseWriter, r *http.Request, err error, fallbackCode, fallbackMessage string) {
 	switch {
+	case errors.Is(err, chatsvc.ErrModelParameters):
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "CHAT_MODEL_PARAMETERS_INVALID", err.Error(), nil)
 	case errors.Is(err, chatsvc.ErrFileReferenceInvalid):
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "CHAT_FILE_REFERENCE_INVALID", err.Error(), nil)
 	case errors.Is(err, chatsvc.ErrAnnotationLimit):

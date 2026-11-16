@@ -616,6 +616,55 @@ func TestResolveClaudeTUIAgentConfigRejectsUnsupportedEffort(t *testing.T) {
 	}
 }
 
+// A Claude gateway that never advertised capabilities leaves the effort levels
+// unknown. Claude Code owns the real model metadata and the ACP session
+// validates the concrete value, so AO must pass the configured level through
+// instead of rejecting it against an empty provider list.
+func TestResolveClaudeEffortPassesThroughWhenProviderDidNotAdvertiseCapabilities(t *testing.T) {
+	m := &Manager{modelCatalog: tuningCatalog{catalog: ports.AgentModelCatalog{Models: []ports.AgentModelInfo{
+		{ID: "glm-5.3", IsDefault: true, EffortUnknown: true},
+		{ID: "glm-5.2", EffortUnknown: true},
+	}}}}
+	resolved, err := m.resolveAgentConfig(context.Background(), ports.SpawnConfig{
+		ProjectID: "p", Kind: domain.KindOrchestrator, Harness: domain.HarnessClaudeCode,
+		AgentConfig: ports.AgentConfig{Model: "glm-5.3", Effort: "max"}, EffortOverride: true,
+	}, domain.ProjectConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Effort != "max" {
+		t.Fatalf("effort = %q, want the configured max passed through", resolved.Effort)
+	}
+
+	// Switching to another unadvertised gateway model keeps the project's
+	// level too: dropping it would silently restart at the provider default.
+	project := domain.ProjectConfig{AgentConfig: domain.AgentConfig{Model: "glm-5.3", Effort: "max"}}
+	resolved, err = m.resolveAgentConfig(context.Background(), ports.SpawnConfig{
+		ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode,
+		AgentConfig: ports.AgentConfig{Model: "glm-5.2"},
+	}, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Effort != "max" {
+		t.Fatalf("effort after model switch = %q, want max retained", resolved.Effort)
+	}
+}
+
+func TestResolveClaudeModelWithoutEffortStillRequiresCatalog(t *testing.T) {
+	m := &Manager{modelCatalog: tuningCatalog{err: errors.New("gateway does not list models")}}
+
+	_, err := m.resolveAgentConfig(context.Background(), ports.SpawnConfig{
+		ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode,
+		AgentConfig: ports.AgentConfig{Model: "provider/model-vNext"},
+	}, domain.ProjectConfig{Worker: domain.RoleOverride{AgentConfig: domain.AgentConfig{
+		Model: "sonnet", Effort: "high",
+	}}})
+	if !errors.Is(err, ports.ErrModelCapabilitiesUnavailable) {
+		t.Fatalf("error = %v, want ErrModelCapabilitiesUnavailable", err)
+	}
+}
+
 func TestResolveGrokEffortIsAvailableOnlyInChat(t *testing.T) {
 	m := &Manager{}
 	for _, mode := range []domain.SessionMode{domain.SessionModeChat, domain.SessionModeTUI} {

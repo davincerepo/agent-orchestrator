@@ -391,12 +391,18 @@ func migrate(db *sql.DB) error {
 	if err := prepareSessionReviewerAgentConfigMigration(db); err != nil {
 		return fmt.Errorf("prepare session reviewer agent-config migration: %w", err)
 	}
+	if err := prepareFleetModelParametersMigration(db); err != nil {
+		return fmt.Errorf("prepare Fleet model parameters migration: %w", err)
+	}
 	// Builds can advance a database past a migration that is added or
 	// renumbered later (notably across fast-moving Nightly releases). Apply
 	// those embedded migrations instead of permanently wedging daemon startup
 	// on goose's out-of-order-history guard.
 	if err := goose.Up(db, "migrations", goose.WithAllowMissing()); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
+	}
+	if err := migrateFleetModelParameters(db); err != nil {
+		return fmt.Errorf("migrate Fleet model parameters: %w", err)
 	}
 	return reconcileSchema(db)
 }

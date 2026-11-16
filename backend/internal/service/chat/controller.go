@@ -1954,11 +1954,13 @@ func (c *Controller) SetSettings(ctx context.Context, settings domain.Conversati
 func (c *Controller) turnSettings() ports.ChatTurnSettings {
 	current := c.Settings()
 	return ports.ChatTurnSettings{
-		Model:    current.Model,
-		Effort:   current.ReasoningEffort,
-		Approval: current.ApprovalMode,
-		Fast:     current.FastMode,
-		Plan:     current.PlanMode,
+		Model:       current.Model,
+		Effort:      current.ReasoningEffort,
+		ServiceTier: current.ServiceTier,
+		Approval:    current.ApprovalMode,
+		// Fleet's durable service tier drives official's per-turn fast flag.
+		Fast: current.FastMode || current.ServiceTier == "priority",
+		Plan: current.PlanMode,
 	}
 }
 

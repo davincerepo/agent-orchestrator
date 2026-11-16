@@ -320,6 +320,9 @@ func (d *Driver) Start(ctx context.Context, cfg ports.ChatStartConfig) (ports.Ch
 	if cfg.Model != "" {
 		params["model"] = cfg.Model
 	}
+	if cfg.ServiceTier != "" {
+		params["serviceTier"] = cfg.ServiceTier
+	}
 	// thread/start has no top-level effort field either; carry the durable AO
 	// choice as a config override like thread/resume does, so a fresh thread
 	// does not silently fall back to the provider default.
@@ -336,6 +339,7 @@ func (d *Driver) Start(ctx context.Context, cfg ports.ChatStartConfig) (ports.Ch
 		} `json:"thread"`
 		Model           string `json:"model"`
 		ReasoningEffort string `json:"reasoningEffort"`
+		ServiceTier     string `json:"serviceTier"`
 	}
 	openCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
@@ -348,6 +352,7 @@ func (d *Driver) Start(ctx context.Context, cfg ports.ChatStartConfig) (ports.Ch
 		return nil, errors.New("thread/start returned no thread id")
 	}
 
+	conv.fastTier = cfg.ServiceTier == codexFastServiceTier
 	conv.start(resp.Thread.ID, resp.Model, resp.ReasoningEffort)
 	return conv, nil
 }
@@ -386,7 +391,9 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		// Neither the tier nor the collaboration mode the thread was left on is
 		// known; the next turn states both.
 		conv.tierUnknown, conv.planUnknown = true, true
-		conv.start(cfg.ProviderConversationID, cfg.Model, cfg.Effort)
+		// Stored AO overrides are intentions, not a snapshot of the live thread.
+		// Defer reading its effective defaults until the user opens this session.
+		conv.start(cfg.ProviderConversationID, "", "")
 		return conv, nil
 	}
 
@@ -402,6 +409,9 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 	}
 	if cfg.Model != "" {
 		params["model"] = cfg.Model
+	}
+	if cfg.ServiceTier != "" {
+		params["serviceTier"] = cfg.ServiceTier
 	}
 	// thread/resume has no top-level effort field. Codex exposes persistent
 	// reasoning effort as a config override, so carry the durable AO choice into

@@ -334,7 +334,7 @@ func (s *Service) EditMessage(
 					provider, err = driver.Resume(operationCtx, ports.ChatResumeConfig{
 						SessionID: cfg.SessionID, ProviderConversationID: providerConversationID,
 						DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath, Env: launchEnv,
-						Model: cfg.Model, Effort: cfg.Effort,
+						Model: cfg.Model, Effort: cfg.Effort, ServiceTier: cfg.ServiceTier,
 						Permissions: cfg.Permissions, SystemPrompt: withHandoffNote(cfg.SystemPrompt, sourceBranch.HandoffNote),
 						ProviderScopeID:       sourceBranch.ProviderScopeID,
 						ProviderIDsScoped:     sourceBranch.ProviderIDsScoped,
@@ -373,7 +373,7 @@ func (s *Service) EditMessage(
 			} else {
 				provider, err = driver.Start(operationCtx, ports.ChatStartConfig{
 					SessionID: cfg.SessionID, DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath,
-					Env: launchEnv, Model: cfg.Model, Effort: cfg.Effort,
+					Env: launchEnv, Model: cfg.Model, Effort: cfg.Effort, ServiceTier: cfg.ServiceTier,
 					Permissions:  cfg.Permissions,
 					SystemPrompt: withHandoffNote(cfg.SystemPrompt, sourceBranch.HandoffNote), AdditionalDirectories: cfg.AdditionalDirectories,
 					MCPServers: cfg.MCPServers, ProviderScopeID: providerScopeID, ProviderIDsScoped: true,
@@ -952,7 +952,7 @@ func (s *Service) activateBranchLocked(ctx context.Context, id domain.SessionID,
 	provider, err := driver.Resume(operationCtx, ports.ChatResumeConfig{
 		SessionID: cfg.SessionID, ProviderConversationID: branch.ProviderConversationID,
 		DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath, Env: launchEnv,
-		Model: cfg.Model, Effort: cfg.Effort,
+		Model: cfg.Model, Effort: cfg.Effort, ServiceTier: cfg.ServiceTier,
 		Permissions: cfg.Permissions, SystemPrompt: withHandoffNote(cfg.SystemPrompt, branch.HandoffNote),
 		ProviderScopeID:       branch.ProviderScopeID,
 		ProviderIDsScoped:     branch.ProviderIDsScoped,
@@ -1012,6 +1012,11 @@ func (s *Service) branchLaunchConfig(
 	if err != nil {
 		return StartConfig{}, nil, fmt.Errorf("chat driver for %s: %w", cfg.Harness, err)
 	}
+	// The conversation's durable settings are the latest user choices; the
+	// stored start config may predate a later pick.
+	settings := source.Settings()
+	cfg.Effort = settings.ReasoningEffort
+	cfg.ServiceTier = settings.ServiceTier
 	return cloneStartConfig(cfg), driver, nil
 }
 
@@ -1064,7 +1069,7 @@ func (s *Service) restoreClosedSourceController(
 		// A branch whose agent never answered may have no native session to resume.
 		FreshIfMissing: s.branchUnanswered(recoveryCtx, id, conversation.ID, branch),
 		DataDir:        cfg.DataDir, WorkspacePath: cfg.WorkspacePath, Env: launchEnv,
-		Model: cmp.Or(conversation.Settings.Model, cfg.Model), Effort: conversation.Settings.ReasoningEffort,
+		Model: cmp.Or(conversation.Settings.Model, cfg.Model), Effort: conversation.Settings.ReasoningEffort, ServiceTier: cfg.ServiceTier,
 		Permissions:           cmp.Or(conversation.Settings.ApprovalMode, cfg.Permissions),
 		SystemPrompt:          withHandoffNote(cfg.SystemPrompt, branch.HandoffNote),
 		ProviderScopeID:       branch.ProviderScopeID,
@@ -1268,7 +1273,8 @@ func truncateAtWord(title string, limit int) string {
 // provider port's Go field names. A later refactor must not turn a safe retry into
 // an idempotency conflict after an app upgrade.
 type deliveryRequestSettings struct {
-	Model    string               `json:"model,omitempty"`
-	Effort   string               `json:"effort,omitempty"`
-	Approval ports.PermissionMode `json:"approval,omitempty"`
+	ServiceTier string               `json:"serviceTier,omitempty"`
+	Model       string               `json:"model,omitempty"`
+	Effort      string               `json:"effort,omitempty"`
+	Approval    ports.PermissionMode `json:"approval,omitempty"`
 }

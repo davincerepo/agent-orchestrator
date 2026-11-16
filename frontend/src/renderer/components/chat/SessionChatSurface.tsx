@@ -404,7 +404,7 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 	);
 	// Only asked for once the conversation is actually readable: the catalog comes
 	// from the live controller, so there is nothing to fetch before then.
-	const { models: controllerModels, loaded: controllerModelsLoaded } = useConversationModels(
+	const { models: controllerModels, loaded: controllerModelsLoaded, error: modelError } = useConversationModels(
 		session.id,
 		Boolean(controllerCatalogsEnabled && snapshot) && !hasProviderModel,
 		hostId,
@@ -881,7 +881,7 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 				configOptions={offeredConfigOptions}
 				onChooseConfigOption={configOptions.setOption}
 				configOptionPending={configOptions.pending || commands.choosingSettings}
-				configOptionError={controllerCatalogsEnabled ? configOptions.error : undefined}
+			configOptionError={(controllerCatalogsEnabled ? configOptions.error : undefined) ?? modelError}
 				onCompact={commands.compact}
 				compacting={commands.compacting}
 				compactUnavailable={commands.compactUnavailable}

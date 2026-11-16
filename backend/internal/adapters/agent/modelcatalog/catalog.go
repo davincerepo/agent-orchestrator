@@ -393,28 +393,104 @@ func discoverClaudeCatalog(
 	request ports.AgentModelDiscoveryRequest,
 	list ClaudeModelListFunc,
 ) (ports.AgentModelCatalog, error) {
-	base := Manual(request.AgentID)
+	base := Base(request.AgentID)
+	base.Source = "catalog"
+	base.FetchedAt = time.Now().UTC()
+	settings := agentcreds.ResolveClaudeSettings(ctx, request.WorkingDir, request.Env, agentcreds.ResolveOptions{})
+
 	if list == nil {
+		base.Models = claudeFallbackModels(settings)
 		return base, errors.New("claude-code model discovery is unavailable")
 	}
 	models, err := list(ctx, request)
 	if err != nil {
+		base.Models = claudeFallbackModels(settings)
 		return base, fmt.Errorf("claude-code model discovery: %w", err)
 	}
 	normalized := normalize(models)
 	if len(normalized) == 0 {
+		base.Models = claudeFallbackModels(settings)
 		return base, errors.New("claude-code model discovery returned no models")
 	}
-	settings := agentcreds.ResolveClaudeSettings(ctx, request.WorkingDir, request.Env, agentcreds.ResolveOptions{})
 	// An explicitly configured alias may accompany the provider's concrete
 	// models; use the discovered catalog to resolve its display version.
-	base.Models = LabelClaudeAliasVersions(applyClaudeConfiguredDefault(normalized, settings.Model), normalized)
+	base.Models = LabelClaudeAliasVersions(
+		applyClaudeConfiguredDefault(normalized, settings.Model, claudeGatewayConfigured(settings)), normalized)
 	base.SelectionMode = ports.ModelSelectionCatalog
 	base.Source = "provider"
 	return base, nil
 }
 
-func applyClaudeConfiguredDefault(models []ports.AgentModelInfo, configured string) []ports.AgentModelInfo {
+// claudeCodeModels is the static Claude Code model catalog. It mirrors the
+// model choices a Claude Code ACP session advertises through session/new, so AO
+// can render the picker without spawning the Agent SDK. Claude Code owns the
+// real list; refresh this snapshot when the advertised models change.
+func claudeCodeModels() []ports.AgentModelInfo {
+	return []ports.AgentModelInfo{
+		{ID: "sonnet", Label: "Sonnet"},
+		{ID: "fable", Label: "Fable 5.1"},
+		{ID: "opus", Label: "Opus"},
+		{ID: "haiku", Label: "Haiku"},
+		{ID: "opus[1m]", Label: "Opus (1M context)"},
+	}
+}
+
+// claudeConfiguredLabel returns the human label Claude Code uses for a known
+// alias, falling back to the raw id for custom aliases and pinned snapshots.
+func claudeConfiguredLabel(id string) string {
+	for _, model := range claudeCodeModels() {
+		if strings.EqualFold(model.ID, id) {
+			return model.Label
+		}
+	}
+	return id
+}
+
+func claudeFallbackModels(settings agentcreds.ClaudeSettings) []ports.AgentModelInfo {
+	static := normalize(claudeCodeModels())
+	if !claudeGatewayConfigured(settings) {
+		return applyClaudeConfiguredDefault(static, settings.Model, false)
+	}
+
+	configured := []string{
+		settings.Model,
+		settings.Env["ANTHROPIC_DEFAULT_OPUS_MODEL"],
+		settings.Env["ANTHROPIC_DEFAULT_SONNET_MODEL"],
+		settings.Env["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+		settings.Env["ANTHROPIC_SMALL_FAST_MODEL"],
+	}
+	models := make([]ports.AgentModelInfo, 0, len(configured)+len(static))
+	seen := make(map[string]struct{}, len(configured)+len(static))
+	appendModel := func(item ports.AgentModelInfo) {
+		item.ID = strings.TrimSpace(item.ID)
+		if item.ID == "" {
+			return
+		}
+		if _, exists := seen[item.ID]; exists {
+			return
+		}
+		seen[item.ID] = struct{}{}
+		if strings.TrimSpace(item.Label) == "" {
+			item.Label = item.ID
+		}
+		models = append(models, item)
+	}
+	for _, id := range configured {
+		// The gateway was not asked about these aliases here; only Claude
+		// Code knows which effort levels the resolved model accepts.
+		appendModel(ports.AgentModelInfo{ID: id, EffortUnknown: true})
+	}
+	for _, item := range static {
+		appendModel(item)
+	}
+	return applyClaudeConfiguredDefault(models, settings.Model, true)
+}
+
+func claudeGatewayConfigured(settings agentcreds.ClaudeSettings) bool {
+	return strings.TrimSpace(settings.Env["ANTHROPIC_BASE_URL"]) != ""
+}
+
+func applyClaudeConfiguredDefault(models []ports.AgentModelInfo, configured string, effortUnknown bool) []ports.AgentModelInfo {
 	if configured == "" {
 		return models
 	}
@@ -424,9 +500,16 @@ func applyClaudeConfiguredDefault(models []ports.AgentModelInfo, configured stri
 		matched = matched || models[i].IsDefault
 	}
 	if !matched {
-		// Preserve the user's explicit default, including custom aliases and
-		// pinned snapshots. Its display version comes from the provider list.
-		models = append(models, ports.AgentModelInfo{ID: configured, Label: configured, IsDefault: true})
+		// Claude accepts custom aliases and pinned snapshots beyond the static
+		// picker snapshot. Keep the effective configured model visible. When it
+		// is one of Claude Code's known aliases (the common case: settings.json
+		// pins "sonnet" while provider discovery returns concrete snapshot IDs),
+		// carry the human label so the picker reads "Sonnet" rather than a raw
+		// id — this is the local CLI's configured default, shown verbatim.
+		models = append(models, ports.AgentModelInfo{
+			ID: configured, Label: claudeConfiguredLabel(configured), IsDefault: true,
+			EffortUnknown: effortUnknown,
+		})
 	}
 	return models
 }
@@ -915,6 +998,8 @@ func CatalogFingerprint(ctx context.Context, agentID, binary, workingDir string,
 	// Refresh pre-provider catalogs after upgrading and when observed credential
 	// presence changes. The fingerprint includes names only, never key material.
 	switch agentID {
+	case "codex":
+		config += "\x00model-parameters-v1"
 	case "opencode", "opencode-v2", "pi", "omp", "kimchi", "prime-agent", "kimi", "auggie", "kiro", "codewhale", "kilocode", "crush", "mimo-code", "command-code":
 		config += ";providers-v2=" + strings.Join(configuredProviders(ctx, agentID, env), ",") + providerCatalogFingerprint(agentID, env)
 	case "aider":

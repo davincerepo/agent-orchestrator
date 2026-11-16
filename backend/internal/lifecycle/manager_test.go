@@ -188,8 +188,9 @@ func (f *fakeStore) CommitSessionControllerEpoch(
 	source, target domain.SessionMode,
 	nativeConversationID string,
 	now time.Time,
+	modelParameters ...domain.AgentConfig,
 ) (bool, error) {
-	return f.changeSessionControllerEpoch(id, source, target, nativeConversationID, now, false)
+	return f.changeSessionControllerEpoch(id, source, target, nativeConversationID, now, false, modelParameters...)
 }
 
 func (f *fakeStore) CommitSessionControllerEpochArchivedChat(
@@ -218,12 +219,18 @@ func (f *fakeStore) changeSessionControllerEpoch(
 	nativeConversationID string,
 	now time.Time,
 	restore bool,
+	modelParameters ...domain.AgentConfig,
 ) (bool, error) {
 	rec, ok := f.sessions[id]
 	if !ok || rec.IsTerminated || domain.NormalizeSessionMode(rec.Mode) != source {
 		return false, nil
 	}
 	rec.Mode = target
+	if len(modelParameters) == 1 {
+		rec.Metadata.Model = modelParameters[0].Model
+		rec.Metadata.Effort = modelParameters[0].Effort
+		rec.Metadata.ServiceTier = modelParameters[0].ServiceTier
+	}
 	rec.Metadata.RuntimeHandleID = ""
 	rec.Metadata.RuntimeLaunchID = ""
 	rec.Metadata.AgentSessionID = nativeConversationID

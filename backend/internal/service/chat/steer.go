@@ -677,7 +677,7 @@ func encodeSteerDeliveryRequest(msg ports.ChatUserMessage) (string, error) {
 		Text: msg.Text, Content: msg.Content, Origin: normalizeOrigin(msg.Origin),
 		SenderSessionID: msg.SenderSessionID,
 		Settings: deliveryRequestSettings{
-			Model: msg.Settings.Model, Effort: msg.Settings.Effort, Approval: msg.Settings.Approval,
+			Model: msg.Settings.Model, Effort: msg.Settings.Effort, ServiceTier: msg.Settings.ServiceTier, Approval: msg.Settings.Approval,
 		},
 	})
 	if err != nil {

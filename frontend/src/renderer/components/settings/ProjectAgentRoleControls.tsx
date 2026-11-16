@@ -12,6 +12,7 @@ import { LOCAL_HOST } from "../../lib/hosts";
 import { TaskModelSelection } from "../TaskModelControls";
 import { AgentModelCombobox } from "./AgentModelCombobox";
 import { EffortPicker } from "./EffortPicker";
+import { ServiceTierControl, findParameterModel, type ServiceTier } from "./ModelParametersControl";
 import { SettingsOptionMenu } from "./SettingsOptionMenu";
 import { SettingsRow } from "./SettingsRow";
 import { MENU_TRIGGER_CHROME, OptionMenuItem } from "../ui/option-menu";
@@ -30,6 +31,8 @@ export function AgentModelField({
 	onModelChange,
 	onModeChange,
 	onEffortChange,
+	serviceTier,
+	onServiceTierChange,
 	onValidityChange,
 	allowCustomFallback = false,
 	supportedEfforts,
@@ -50,6 +53,9 @@ export function AgentModelField({
 	onModelChange: (value: string) => void;
 	onModeChange: (value: string) => void;
 	onEffortChange: (value: string) => void;
+	/** Fleet's durable Fast tier; rendered only for Codex when provided. */
+	serviceTier?: ServiceTier;
+	onServiceTierChange?: (value: ServiceTier) => void;
 	onValidityChange: (valid: boolean) => void;
 	allowCustomFallback?: boolean;
 	/** Cloud accepts custom model IDs and validates effort at the harness boundary. */
@@ -252,6 +258,10 @@ export function AgentModelField({
 					roleLabel: t(`settings.models.${role}Role`),
 				}}
 			/>
+			{onServiceTierChange && agentId === "codex"
+				? <ServiceTierControl model={findParameterModel(models, model) ?? models.find((item) => item.isDefault)}
+					value={serviceTier} onChange={onServiceTierChange} />
+				: null}
 			{warning && <FieldWarning className={cn("px-1 text-xs leading-row", warningClassName)} warning={warning} onRetry={cloudGapWarning ? readCloudAgain : undefined} />}
 		</>
 	);

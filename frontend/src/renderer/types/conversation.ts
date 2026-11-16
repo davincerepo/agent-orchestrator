@@ -749,6 +749,7 @@ export type ApprovalMode = "default" | "accept-edits" | "auto" | "bypass-permiss
 export interface TurnSettings {
 	model?: string;
 	reasoningEffort?: string;
+	serviceTier?: "default" | "priority";
 	approvalMode?: ApprovalMode;
 	/** Ask for the provider's faster tier, on models that offer one. */
 	fastMode?: boolean;

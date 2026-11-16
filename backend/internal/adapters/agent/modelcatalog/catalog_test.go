@@ -615,7 +615,7 @@ func TestUnrealCatalogShowsEffectiveModelAndAllowsOverride(t *testing.T) {
 	}
 }
 
-func TestClaudeWithoutDiscoveryDoesNotInventModels(t *testing.T) {
+func TestClaudeWithoutDiscoveryFallsBackToAliases(t *testing.T) {
 	request := claudeRequest(t)
 	request.Binary = "/missing/claude"
 	request.Env["ANTHROPIC_MODEL"] = "claude-opus-4-5-20251101"
@@ -623,8 +623,17 @@ func TestClaudeWithoutDiscoveryDoesNotInventModels(t *testing.T) {
 	if err == nil {
 		t.Fatal("missing provider discovery was reported as success")
 	}
-	if len(got.Models) != 0 || !got.AllowCustom {
-		t.Fatalf("catalog = %#v, want no invented choices with manual entry allowed", got)
+	if len(got.Models) == 0 || !got.AllowCustom {
+		t.Fatalf("catalog = %#v, want fallback aliases with manual entry allowed", got)
+	}
+	found := false
+	for _, model := range got.Models {
+		if model.ID == "claude-opus-4-5-20251101" {
+			found = model.IsDefault
+		}
+	}
+	if !found {
+		t.Fatalf("configured model missing from fallback: %#v", got.Models)
 	}
 }
 
@@ -1287,9 +1296,8 @@ func TestClaudeCatalogFingerprintUsesOnlyResolvedSettings(t *testing.T) {
 func TestCatalogFingerprintKeepsTheExecutableOnlyValueForConfiglessAgents(t *testing.T) {
 	dir := t.TempDir()
 	writeClaudeSettings(t, dir, "opus")
-	// codex reads no configuration, so its fingerprint must stay byte-identical
-	// to the executable fingerprint earlier daemons cached under.
-	got := CatalogFingerprint(context.Background(), "codex", "codex", dir, nil)
+	// Configless agents without versioned capability discovery keep their cache.
+	got := CatalogFingerprint(context.Background(), "amp", "codex", dir, nil)
 	if want := BinaryVersion(context.Background(), "codex"); got != want {
 		t.Fatalf("fingerprint = %q, want the executable fingerprint %q", got, want)
 	}

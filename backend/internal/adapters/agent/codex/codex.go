@@ -107,9 +107,16 @@ func (p *Plugin) Manifest() adapters.Manifest {
 // a model override and a reasoning-effort override (forwarded as
 // `-c model_reasoning_effort=<effort>`; empty defers to the model default).
 func (p *Plugin) GetConfigSpec(ctx context.Context) (ports.ConfigSpec, error) {
-	return agentbase.ModelEffortConfigSpec(ctx,
+	spec, err := agentbase.ModelEffortConfigSpec(ctx,
 		"Model override passed to `codex --model`.",
 		"Reasoning effort override passed to `codex -c model_reasoning_effort`.")
+	if err != nil {
+		return ports.ConfigSpec{}, err
+	}
+	spec.Fields = append(spec.Fields, ports.ConfigField{
+		Key: "serviceTier", Type: ports.ConfigFieldString, Description: "default (Fast off) or priority (Fast on).",
+	})
+	return spec, nil
 }
 
 // GetLaunchCommand builds the argv to start a new Codex session, applying the
@@ -123,13 +130,14 @@ func (p *Plugin) GetLaunchCommand(ctx context.Context, cfg ports.LaunchConfig) (
 		return nil, err
 	}
 
-	var providerArgs []string
+	providerArgs := []string{}
 	if err := appendSessionHookFlags(&providerArgs); err != nil {
 		return nil, err
 	}
 	appendTerminalCompatibilityFlags(&providerArgs)
 	appendReasoningEffortFlag(&providerArgs, cfg.Config.Effort)
-	appendFastTierFlag(&providerArgs, cfg.Config.Launch)
+	launch := triStateLaunch(cfg.Config)
+	appendFastTierFlag(&providerArgs, launch)
 	return agentruntime.BuildLaunchCommand(agentruntime.LaunchConfig{
 		Harness:          agentruntime.HarnessCodex,
 		Binary:           binary,
@@ -163,13 +171,14 @@ func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig)
 		return nil, false, err
 	}
 
-	var providerArgs []string
+	providerArgs := []string{}
 	if err := appendSessionHookFlags(&providerArgs); err != nil {
 		return nil, false, err
 	}
 	appendTerminalCompatibilityFlags(&providerArgs)
 	appendReasoningEffortFlag(&providerArgs, cfg.Config.Effort)
-	appendFastTierFlag(&providerArgs, cfg.Config.Launch)
+	launch := triStateLaunch(cfg.Config)
+	appendFastTierFlag(&providerArgs, launch)
 	return agentruntime.BuildRestoreCommand(agentruntime.RestoreConfig{
 		Harness:          agentruntime.HarnessCodex,
 		Binary:           binary,
@@ -662,6 +671,19 @@ func appendTerminalCompatibilityFlags(cmd *[]string) {
 var fileExists = func(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// triStateLaunch maps Fleet's durable service tier choice onto official's
+// launch-level fast-tier flags. Empty inherits, so no flag is appended.
+func triStateLaunch(cfg ports.AgentConfig) domain.AgentLaunchOptions {
+	launch := cfg.Launch
+	switch cfg.ServiceTier {
+	case "priority":
+		launch.FastMode = true
+	case "default":
+		launch.FastModeOff = true
+	}
+	return launch
 }
 
 // SupportsTerminalVersionRefresh opts into exact-conversation idle restarts.

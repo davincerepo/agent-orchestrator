@@ -167,6 +167,7 @@ const ROUTE_TEMPLATES = [
 	"/api/v1/sessions/{sessionId}/activity",
 	"/api/v1/sessions/{sessionId}/exit-agent",
 	"/api/v1/sessions/{sessionId}/interface-transition",
+	"/api/v1/sessions/{sessionId}/terminal-model-parameters",
 	"/api/v1/sessions/{sessionId}/kill",
 	"/api/v1/sessions/{sessionId}/pr",
 	"/api/v1/sessions/{sessionId}/pr/claim",
