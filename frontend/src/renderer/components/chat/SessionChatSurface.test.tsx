@@ -1,4 +1,4 @@
-import type { ChatDraftExcerptReference } from "../../lib/chat-drafts";
+import type { ChatDraftExcerptReference, ChatInlineEditDelivery } from "../../lib/chat-drafts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -56,6 +56,7 @@ const {
 	conversationCommandState: {
 		busy: false,
 		send: vi.fn(),
+		editMessage: vi.fn(),
 		chooseSettings: vi.fn(),
 		pendingAcceptedTurnId: undefined as string | undefined,
 		acknowledgeAcceptedTurn: vi.fn(),
@@ -96,6 +97,8 @@ const sideMocks = vi.hoisted(() => ({
 	activeId: "existing-side" as string | undefined,
 	attach: undefined as undefined | ((excerpt: ChatDraftExcerptReference) => Promise<void>),
 	agentSwitch: undefined as AgentSwitchProps | undefined,
+	workspaceEdit: undefined as undefined | ((turnId: string, text: string, clientMessageId?: string, target?: ChatInlineEditDelivery["providerSwitch"]) => Promise<unknown>),
+	editTarget: undefined as ChatInlineEditDelivery["providerSwitch"] | undefined,
 	workspaceSend: undefined as
 		| undefined
 		| ((text: string, attachments: undefined, clientMessageId: string) => Promise<unknown>),
@@ -179,12 +182,16 @@ vi.mock("./ChatWorkspace", async () => {
 			shellTarget,
 			onAddToSideChat,
 			onSend,
+			onEditMessage,
+			editProviderSwitch,
 			composerNotice,
 			importBlock,
 			findRequest,
 			onFindRequestHandled,
 		}: {
 			importBlock?: string;
+			onEditMessage: typeof sideMocks.workspaceEdit;
+			editProviderSwitch: typeof sideMocks.editTarget;
 			onSend: typeof sideMocks.workspaceSend;
 			onAddToSideChat?: typeof sideMocks.attach;
 			composerNotice?: ReactNode;
@@ -208,6 +215,8 @@ vi.mock("./ChatWorkspace", async () => {
 			shellTarget?: { handleId: string };
 		}) => {
 			sideMocks.workspaceSend = onSend;
+			sideMocks.workspaceEdit = onEditMessage;
+			sideMocks.editTarget = editProviderSwitch;
 			sideMocks.attach = onAddToSideChat;
 			sideMocks.agentSwitch = agentSwitch;
 			const [mountedSessionId] = useState(snapshot.sessionId);
@@ -307,6 +316,7 @@ beforeEach(() => {
 	conversationState.isLoadingOlder = false;
 	conversationState.loadOlder = vi.fn();
 	conversationCommandState.send = vi.fn().mockResolvedValue({});
+	conversationCommandState.editMessage = vi.fn().mockResolvedValue({ status: "accepted" });
 	conversationCommandState.busy = false;
 	conversationCommandState.pendingAcceptedTurnId = undefined;
 	conversationCommandState.acknowledgeAcceptedTurn.mockReset();
@@ -333,6 +343,38 @@ describe("SessionChatSurface recovery", () => {
 });
 
 describe("SessionChatSurface pending switch effort", () => {
+	it("passes a pending GPT model and effort to historical edit delivery", async () => {
+		conversationState.snapshot = { ...snapshotFor(session.id), harness: "claude-code" };
+		render(<Wrapper client={new QueryClient()}><SessionChatSurface session={session} /></Wrapper>);
+		await act(async () => {
+			sideMocks.agentSwitch?.onPendingChange({ harness: "codex", model: "gpt-6.1-sol", effort: "xhigh" });
+		});
+		expect(sideMocks.editTarget).toMatchObject({ targetHarness: "codex", model: "gpt-6.1-sol", effort: "xhigh" });
+		await act(async () => {
+			await sideMocks.workspaceEdit?.("original-turn", "edited prompt", "edit-id", sideMocks.editTarget);
+		});
+		expect(conversationCommandState.editMessage).toHaveBeenCalledWith(
+			"original-turn", "edited prompt", "edit-id",
+			expect.objectContaining({ targetHarness: "codex", model: "gpt-6.1-sol", effort: "xhigh" }),
+		);
+		expect(sideMocks.agentSwitch?.pending).toBeUndefined();
+		expect(conversationCommandState.send).not.toHaveBeenCalled();
+		expect(providerSwitchMock).not.toHaveBeenCalled();
+	});
+
+	it("keeps the selected target when historical edit delivery is refused", async () => {
+		conversationState.snapshot = { ...snapshotFor(session.id), harness: "claude-code" };
+		conversationCommandState.editMessage.mockResolvedValue({ status: "not-accepted", reason: "target unavailable" });
+		render(<Wrapper client={new QueryClient()}><SessionChatSurface session={session} /></Wrapper>);
+		await act(async () => {
+			sideMocks.agentSwitch?.onPendingChange({ harness: "codex", model: "gpt-6.1-sol", effort: "xhigh" });
+		});
+		await act(async () => {
+			await sideMocks.workspaceEdit?.("original-turn", "edited prompt", "edit-id", sideMocks.editTarget);
+		});
+		expect(sideMocks.agentSwitch?.pending?.model).toBe("gpt-6.1-sol");
+	});
+
 	it.each([
 		{ harness: "codex", effort: undefined, shownEffort: "low", expected: "low" },
 		{ harness: "codex", effort: "high", shownEffort: "low", expected: "high" },

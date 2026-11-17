@@ -124,6 +124,7 @@ interface ConversationRetryMutationInput extends ConversationSessionMutationInpu
 }
 
 interface ConversationEditMutationInput extends ConversationRetryMutationInput {
+	providerSwitch?: components["schemas"]["EditConversationMessageRequest"]["providerSwitch"];
 	text: string;
 }
 
@@ -1218,6 +1219,7 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 			sourceTurnId,
 			requestId,
 			text,
+			providerSwitch,
 		}: ConversationEditMutationInput) => {
 			const { data, error } = await clientForSessionHost(hostId).POST(
 				"/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/edit",
@@ -1225,7 +1227,7 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 					params: {
 						path: { sessionId: targetSessionId, turnId: sourceTurnId },
 					},
-					body: { text, clientMessageId: requestId },
+					body: { text, clientMessageId: requestId, ...(providerSwitch ? { providerSwitch } : {}) },
 				},
 			);
 			if (error) throw error;
@@ -1439,7 +1441,7 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 						? retryTurn.variables?.sourceTurnId
 						: undefined,
 		},
-		editMessage: async (turnId: string, text: string, clientMessageId?: string): Promise<ChatEditOutcome> => {
+		editMessage: async (turnId: string, text: string, clientMessageId?: string, providerSwitch?: ConversationEditMutationInput["providerSwitch"]): Promise<ChatEditOutcome> => {
 			if (!sessionId) return Promise.reject(new Error("No conversation session is selected."));
 			const requestId = clientMessageId ?? crypto.randomUUID();
 			if (!claimConversationDispatch(queryClient, stateSessionId as string, requestId, "edit", turnId)) {
@@ -1451,7 +1453,9 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 				sourceTurnId: turnId,
 				targetSessionId: sessionId,
 				text,
+				providerSwitch,
 			});
+			if (providerSwitch) void refreshAfterProviderSwitch(queryClient, sessionId, hostId).catch(() => {});
 			return { status: "accepted" };
 			} catch (error) {
 				const outcome = editNonAcceptance(error);

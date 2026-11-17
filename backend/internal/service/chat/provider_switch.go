@@ -24,6 +24,8 @@ func (s *Service) SetTerminalProviderSwitcher(switcher TerminalProviderSwitcher)
 	s.terminalSwitcher = switcher
 }
 
+const editedProviderContextPrefix = "The user is replacing an earlier message. Only the conversation before that message follows. Answer the replacement prompt without relying on later messages.\n\n"
+
 type providerSwitchActivityDetail struct {
 	Event         string              `json:"event"`
 	SourceHarness domain.AgentHarness `json:"sourceHarness"`
@@ -98,6 +100,10 @@ func (s *Service) applyPicksToActiveTarget(ctx context.Context, id domain.Sessio
 		return err
 	}
 	defer release()
+	return s.applyPicksToController(ctx, id, controller, request)
+}
+
+func (s *Service) applyPicksToController(ctx context.Context, id domain.SessionID, controller *Controller, request domain.ProviderSwitchRequest) error {
 	current := controller.Settings()
 	picked := current
 	picked.Model = cmp.Or(request.Model, current.Model)
@@ -180,6 +186,12 @@ func (s *Service) switchProvider(ctx context.Context, id domain.SessionID, reque
 		return err
 	}
 	defer gate.unlock()
+	return s.switchProviderLocked(ctx, id, request, nil)
+}
+
+// switchProviderLocked also supports a historical edit's bounded context. The
+// caller holds the controller gate and the provider-switch lock.
+func (s *Service) switchProviderLocked(ctx context.Context, id domain.SessionID, request domain.ProviderSwitchRequest, edit *domain.ConversationEditAnchor) error {
 	// Read under the lock: a switch that ran while this one waited has moved the
 	// session to another agent and owner.
 	record, err := s.requireChatSession(ctx, id)
@@ -223,6 +235,14 @@ func (s *Service) switchProvider(ctx context.Context, id domain.SessionID, reque
 	noteInput, err := s.handoffNoteInput(ctx, record, request.TargetHarness, strings.TrimSpace(request.IdempotencyKey))
 	if err != nil {
 		return err
+	}
+	var editContext string
+	if edit != nil {
+		replay, _, err := s.approximateReplayContent(ctx, conversation.ID, 0, edit.ForkAfterSequence)
+		if err != nil {
+			return fmt.Errorf("prepare edited provider context: %w", err)
+		}
+		editContext = replay.Text
 	}
 	if err := source.BeginIdleBranchHandoff(ctx); err != nil {
 		return &domain.ProviderSwitchError{Kind: domain.ProviderSwitchRefusalBusy, Detail: err.Error(), Cause: err}
@@ -273,6 +293,9 @@ func (s *Service) switchProvider(ctx context.Context, id domain.SessionID, reque
 	stopped := time.Since(stopStarted)
 	noteInput.ChangedFiles = <-changedFiles
 	handoffNote := domain.BuildHandoffNote(noteInput)
+	if edit != nil {
+		handoffNote = editedProviderContextPrefix + editContext
+	}
 	noteReady := time.Since(stopStarted)
 
 	targetCfg := cloneStartConfig(startCfg)
@@ -291,6 +314,10 @@ func (s *Service) switchProvider(ctx context.Context, id domain.SessionID, reque
 	targetCfg.Model, targetCfg.Effort = request.Model, request.Effort
 	targetCfg.Permissions = permissions
 	targetCfg.ControllerReady = func(started StartResult) (ControllerCommit, error) {
+		if edit != nil {
+			started.ProviderBoundary.ForkAfterSequence = edit.ForkAfterSequence
+			started.ProviderBoundary.ReplayCutoffSequence = edit.ForkAfterSequence
+		}
 		// The target's launch wrote its browser credential to the session, and the
 		// user may have renamed or pinned it meanwhile, so the row is read again.
 		targetRecord, err := s.requireChatSession(operationCtx, id)
@@ -365,6 +392,50 @@ func (s *Service) switchProvider(ctx context.Context, id domain.SessionID, reque
 		}
 	}
 	return nil
+}
+
+// A provider boundary replaces no native turn. Recover its completed edit using
+// the existing message, turn and receipt operations.
+func (s *Service) recoverEditedProviderDelivery(ctx context.Context, conversationID string, msg ports.ChatUserMessage, sourceBranchID string) error {
+	message, found, err := s.store.ConversationMessageByClientID(ctx, conversationID, msg.ClientMessageID)
+	if err != nil || !found || message.Text != msg.Text {
+		return err
+	}
+	turn, err := s.store.TurnByID(ctx, message.TurnID)
+	if err != nil || turn.State != domain.TurnStateCompleted {
+		return err
+	}
+	branch, err := s.store.ConversationBranch(ctx, conversationID, turn.BranchID)
+	if err != nil {
+		return err
+	}
+	if branch.ReplacedTurnID != "" && sourceBranchID == "" {
+		return s.store.RecoverCompletedEditDelivery(ctx, conversationID, msg.ClientMessageID, s.now())
+	}
+	if branch.ReplacedTurnID == "" && !strings.HasPrefix(branch.HandoffNote, editedProviderContextPrefix) {
+		return nil
+	}
+	return s.store.CompleteEditDelivery(ctx, conversationID, msg.ClientMessageID, cmp.Or(sourceBranchID, branch.ParentBranchID), branch.ID, turn, s.now())
+}
+
+func (s *Service) editMessageWithProvider(ctx context.Context, id domain.SessionID, source *Controller, anchor domain.ConversationEditAnchor, msg ports.ChatUserMessage) (EditMessageResult, error) {
+	operationCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), nativeEditHandoffLimit)
+	defer cancel()
+	if msg.ClientMessageID != "" {
+		if err := s.store.BeginEditProviderWork(operationCtx, source.conversation.ID, msg.ClientMessageID, source.generation); err != nil {
+			return EditMessageResult{}, fmt.Errorf("%w: %w", ErrEditDeliveryUncertain, err)
+		}
+	}
+	request := *msg.ProviderSwitch
+	request.IdempotencyKey = msg.ClientMessageID
+	if err := s.switchProviderLocked(operationCtx, id, request, &anchor); err != nil {
+		return s.rejectUndispatchedEditDelivery(operationCtx, source.conversation.ID, msg.ClientMessageID, err)
+	}
+	target, err := s.Controller(id)
+	if err != nil {
+		return EditMessageResult{}, fmt.Errorf("%w: %w", ErrEditDeliveryUncertain, err)
+	}
+	return s.sendEditedMessage(operationCtx, anchor.SourceBranchID, target.conversation.ActiveBranchID, target, msg, false)
 }
 
 // switchPermissions is the permission mode a switch target starts with, and

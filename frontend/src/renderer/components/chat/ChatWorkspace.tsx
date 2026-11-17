@@ -632,7 +632,9 @@ export interface ChatWorkspaceProps {
 		turnId: string,
 		text: string,
 		clientMessageId?: string,
+		providerSwitch?: ChatInlineEditDelivery["providerSwitch"],
 	) => void | ChatEditOutcome | Promise<ChatEditOutcome | void>;
+	editProviderSwitch?: ChatInlineEditDelivery["providerSwitch"];
 	editMessagePending?: boolean;
 	editMessageError?: string;
 	/** Switch the visible conversation to another branch. */
@@ -923,6 +925,7 @@ function ChatWorkspaceContent({
 	onOpenFileAnnotation,
 	retryControl,
 	onEditMessage,
+	editProviderSwitch,
 	editMessagePending,
 	editMessageError,
 	onActivateBranch,
@@ -2305,6 +2308,7 @@ function ChatWorkspaceContent({
 									retryControl={retryControl}
 									composerRecoveryTurnId={retryControl ? limitedTurn?.id : undefined}
 									onEditHumanMessage={draftPersistenceAvailable ? editHumanMessage : undefined}
+									editProviderSwitch={editProviderSwitch}
 									editPending={editMessagePending}
 									editBusy={Boolean(durableTurn)}
 									editError={editMessageError}
@@ -3325,6 +3329,7 @@ export function Timeline({
 	retryControl,
 	composerRecoveryTurnId,
 	onEditHumanMessage,
+	editProviderSwitch,
 	editPending,
 	editBusy,
 	editError,
@@ -3383,6 +3388,7 @@ export function Timeline({
 	retryControl?: ChatRetryControl;
 	composerRecoveryTurnId?: string;
 	onEditHumanMessage?: ChatWorkspaceProps["onEditMessage"];
+	editProviderSwitch?: ChatWorkspaceProps["editProviderSwitch"];
 	editPending?: boolean;
 	editBusy?: boolean;
 	editError?: string;
@@ -4220,6 +4226,7 @@ export function Timeline({
 					turnId: current.turnId,
 					text,
 					content: current.content,
+					providerSwitch: editProviderSwitch,
 					clientMessageId:
 					durableInlineEditDelivery?.clientMessageId ?? crypto.randomUUID(),
 			});
@@ -4246,11 +4253,12 @@ export function Timeline({
 			if (!mutationToken) return;
 			let mutationFinished = false;
 			try {
-				const outcome = await editHumanMessage(
-					delivery.turnId,
-					delivery.requestText,
-					delivery.clientMessageId,
-				);
+				let outcome: ChatEditOutcome | void;
+				if (delivery.providerSwitch) {
+					outcome = await editHumanMessage(delivery.turnId, delivery.requestText, delivery.clientMessageId, delivery.providerSwitch);
+				} else {
+					outcome = await editHumanMessage(delivery.turnId, delivery.requestText, delivery.clientMessageId);
+				}
 				if (outcome?.status === "not-accepted") {
 					const cleared = clearRejectedChatInlineEditDelivery(
 						draftScope,
@@ -4285,6 +4293,7 @@ export function Timeline({
 		[
 			acceptAndClearInlineEditDelivery,
 			durableInlineEditDelivery,
+			editProviderSwitch,
 			editHumanMessage,
 			inlineEditPending,
 			onEditHumanMessage,

@@ -1493,3 +1493,18 @@ describe("unsent composer sends", () => {
 		expect(readChatSessionDraft("keep", storage).unsent).toBeUndefined();
 	});
 });
+
+
+it("retains the original target when an uncertain edit is recovered", () => {
+	const storage = new MemoryStorage();
+	const input = { turnId: "turn-1", text: "edited prompt", content: [], clientMessageId: "edit-switch-id" };
+	const target = { targetHarness: "codex", model: "gpt-6.1-sol", effort: "xhigh" };
+	const prepared = prepareChatInlineEditDelivery("edit-switch-session", { ...input, providerSwitch: target }, storage);
+	expect(prepared.ok).toBe(true);
+	target.effort = "low";
+	const recovered = prepareChatInlineEditDelivery("edit-switch-session", {
+		...input, providerSwitch: { targetHarness: "claude-code", model: "another-model" },
+	}, storage);
+	expect(recovered.recovered).toBe(true);
+	expect(recovered.mutation?.providerSwitch).toEqual({ targetHarness: "codex", model: "gpt-6.1-sol", effort: "xhigh" });
+});

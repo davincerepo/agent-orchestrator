@@ -5964,7 +5964,7 @@ describe("ChatWorkspace message actions", () => {
 		);
 	});
 
-	it("edits a human message through the branch endpoint without touching the composer", async () => {
+	it.each([undefined, { targetHarness: "codex", model: "gpt-6.1-sol", effort: "xhigh" }])("edits a human message through the branch endpoint without touching the composer", async (target) => {
 		const user = userEvent.setup();
 		const onRollback = vi.fn();
 		const onEditMessage = vi.fn(async () => undefined);
@@ -5973,6 +5973,7 @@ describe("ChatWorkspace message actions", () => {
 				snapshot={idleSnapshot()}
 				onRollback={onRollback}
 				onEditMessage={onEditMessage}
+				editProviderSwitch={target}
 			/>,
 		);
 		const composer = screen.getByLabelText("Message the agent");
@@ -5991,13 +5992,9 @@ describe("ChatWorkspace message actions", () => {
 		await user.type(editor, "Check worktree state, including staged files.");
 		fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
 
-		await waitFor(() =>
-			expect(onEditMessage).toHaveBeenCalledWith(
-				"turn-1",
-				"Check worktree state, including staged files.",
-				expect.any(String),
-			),
-		);
+		const expectedArguments = ["turn-1", "Check worktree state, including staged files.", expect.any(String)];
+		if (target) expectedArguments.push(target);
+		await waitFor(() => expect(onEditMessage).toHaveBeenCalledWith(...expectedArguments));
 		expect(onRollback).not.toHaveBeenCalled();
 		expect(composer).toHaveTextContent("unsent composer draft");
 	});

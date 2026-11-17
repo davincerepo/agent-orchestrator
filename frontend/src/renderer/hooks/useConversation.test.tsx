@@ -1680,3 +1680,19 @@ it("keeps a live refresh that is in flight when older history starts loading", a
 
 	await waitFor(() => expect(result.current.snapshot?.latestSequence).toBe(21));
 });
+
+
+it("includes the selected provider in a historical edit request", async () => {
+	postMock.mockResolvedValue({ data: { turnId: "edited-turn" }, error: undefined });
+	const { result } = renderHook(() => useConversationCommands("edit-switch-session"), { wrapper });
+	const target = { targetHarness: "codex", model: "gpt-6.1-sol", effort: "xhigh" };
+	await act(async () => {
+		await result.current.editMessage("original-turn", "edited prompt", "edit-switch-id", target);
+	});
+	expect(postMock).toHaveBeenCalledWith(
+		"/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/edit",
+		expect.objectContaining({
+			body: { text: "edited prompt", clientMessageId: "edit-switch-id", providerSwitch: target },
+		}),
+	);
+});

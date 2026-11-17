@@ -384,9 +384,26 @@ func (c *ConversationsController) editMessage(w http.ResponseWriter, r *http.Req
 			"CHAT_EDIT_TURN_INVALID", "edited message text is required", nil)
 		return
 	}
+	var target *domain.ProviderSwitchRequest
+	if req.ProviderSwitch != nil {
+		if req.ProviderSwitch.Message != nil {
+			envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "CHAT_EDIT_TURN_INVALID", "an edit cannot contain a separate switch message", nil)
+			return
+		}
+		picked := req.ProviderSwitch
+		request := domain.ProviderSwitchRequest{
+			TargetHarness: domain.AgentHarness(picked.TargetHarness),
+			Model:         capActivityMeta(strings.TrimSpace(domain.SanitizeControlChars(picked.Model))),
+			Effort:        capActivityMeta(strings.TrimSpace(domain.SanitizeControlChars(picked.Effort))),
+			FastMode:      picked.FastMode, Ultracode: picked.Ultracode, AutoCompactWindow: picked.AutoCompactWindow,
+			PermissionMode: domain.PermissionMode(picked.PermissionMode),
+		}
+		target = &request
+	}
 	result, err := c.Svc.EditMessage(r.Context(), domain.SessionID(chi.URLParam(r, "sessionId")),
 		chi.URLParam(r, "turnId"), ports.ChatUserMessage{
 			Text: req.Text, ClientMessageID: req.ClientMessageID, Origin: domain.MessageOriginHuman,
+			ProviderSwitch: target,
 		})
 	if err != nil {
 		writeConversationEditError(w, r, err)
