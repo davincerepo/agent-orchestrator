@@ -17,6 +17,8 @@
 
 `fleet/feat/session-import` 仅保留历史参考，不参与集成。
 
+`codex/fix-edit-provider-switch` 修复历史消息编辑重发遗漏所选 Agent、模型和 effort 的问题，见 [edit-provider-switch.md](edit-provider-switch.md)。
+
 ## 分支维护约定
 
 - 实现先提交到所属功能分支，再合入 `main-fleet`；功能分支保持独立，不反向合入集成分支。

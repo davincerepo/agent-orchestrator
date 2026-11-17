@@ -176,6 +176,13 @@ func (s *Service) EditMessage(
 	turnID string,
 	msg ports.ChatUserMessage,
 ) (EditMessageResult, error) {
+	if msg.ProviderSwitch != nil {
+		unlock, err := s.lockProviderSwitch(ctx, id)
+		if err != nil {
+			return EditMessageResult{}, err
+		}
+		defer unlock()
+	}
 	requestJSON, err := encodeEditDeliveryRequest(turnID, msg)
 	if err != nil {
 		return EditMessageResult{}, err
@@ -191,7 +198,13 @@ func (s *Service) EditMessage(
 		}
 		if found && (delivery.RequestJSON != requestJSON || delivery.State != domain.ConversationEditReserved || delivery.ProviderWorkStarted) {
 			if delivery.RequestJSON == requestJSON && delivery.State == domain.ConversationEditReserved {
-				if err := s.store.RecoverCompletedEditDelivery(ctx, conversation.ID, msg.ClientMessageID, s.now()); err != nil {
+				var err error
+				if msg.ProviderSwitch == nil {
+					err = s.store.RecoverCompletedEditDelivery(ctx, conversation.ID, msg.ClientMessageID, s.now())
+				} else {
+					err = s.recoverEditedProviderDelivery(ctx, conversation.ID, msg, delivery.SourceBranchID)
+				}
+				if err != nil {
 					return EditMessageResult{}, fmt.Errorf("%w: %w", ErrEditDeliveryUncertain, err)
 				}
 				delivery, _, loadErr = s.store.EditDelivery(ctx, conversation.ID, msg.ClientMessageID)
@@ -249,6 +262,19 @@ func (s *Service) EditMessage(
 		}
 	}
 	msg.Content = withoutInternalReplayContent(content)
+	if target := msg.ProviderSwitch; target != nil {
+		if target.TargetHarness == "" || !s.SupportsChat(target.TargetHarness) {
+			return s.rejectUndispatchedEditDelivery(ctx, source.conversation.ID, msg.ClientMessageID,
+				&domain.ProviderSwitchError{Kind: domain.ProviderSwitchRefusalUnsupported, Detail: "the selected provider does not support Chat"})
+		}
+		if target.TargetHarness == source.harness {
+			if err := s.applyPicksToController(ctx, id, source, *target); err != nil {
+				return s.rejectUndispatchedEditDelivery(ctx, source.conversation.ID, msg.ClientMessageID, err)
+			}
+		} else {
+			return s.editMessageWithProvider(ctx, id, source, anchor, msg)
+		}
+	}
 	if anchor.RetryActiveBranch {
 		if msg.ClientMessageID != "" {
 			if err := s.store.BeginEditProviderWork(ctx, source.conversation.ID, msg.ClientMessageID, source.generation); err != nil {
@@ -711,17 +737,19 @@ type EditMessageResult struct {
 }
 
 type editDeliveryRequest struct {
-	SourceTurnID string                  `json:"sourceTurnId"`
-	Text         string                  `json:"text"`
-	Content      []ports.ChatContent     `json:"content,omitempty"`
-	Origin       domain.MessageOrigin    `json:"origin"`
-	Settings     deliveryRequestSettings `json:"settings"`
+	SourceTurnID   string                        `json:"sourceTurnId"`
+	Text           string                        `json:"text"`
+	Content        []ports.ChatContent           `json:"content,omitempty"`
+	Origin         domain.MessageOrigin          `json:"origin"`
+	Settings       deliveryRequestSettings       `json:"settings"`
+	ProviderSwitch *domain.ProviderSwitchRequest `json:"providerSwitch,omitempty"`
 }
 
 func encodeEditDeliveryRequest(turnID string, msg ports.ChatUserMessage) (string, error) {
 	encoded, err := json.Marshal(editDeliveryRequest{
 		SourceTurnID: turnID, Text: msg.Text, Content: msg.Content,
-		Origin: normalizeOrigin(msg.Origin),
+		Origin:         normalizeOrigin(msg.Origin),
+		ProviderSwitch: msg.ProviderSwitch,
 		Settings: deliveryRequestSettings{
 			Model: msg.Settings.Model, Effort: msg.Settings.Effort, Approval: msg.Settings.Approval,
 		},

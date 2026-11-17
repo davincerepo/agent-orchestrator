@@ -145,7 +145,8 @@ func TestChatViewRouteValidatesAndForwardsLease(t *testing.T) {
 	}
 }
 
-func (f *fakeConversationService) EditMessage(context.Context, domain.SessionID, string, ports.ChatUserMessage) (chatsvc.EditMessageResult, error) {
+func (f *fakeConversationService) EditMessage(_ context.Context, _ domain.SessionID, _ string, msg ports.ChatUserMessage) (chatsvc.EditMessageResult, error) {
+	f.sent = msg
 	return chatsvc.EditMessageResult{}, nil
 }
 
@@ -988,5 +989,23 @@ func TestConversationFileAnnotationsRoundTripAndValidateOwnership(t *testing.T) 
 	defer rejected.Body.Close()
 	if rejected.StatusCode != http.StatusBadRequest {
 		t.Fatalf("cross-session status %d", rejected.StatusCode)
+	}
+}
+
+func TestHistoricalEditRoutePreservesProviderSelection(t *testing.T) {
+	service := &fakeConversationService{}
+	server := conversationTestServer(t, service)
+	body := strings.NewReader(`{"text":"edited prompt","clientMessageId":"edit-switch-id","providerSwitch":{"targetHarness":"codex","model":"gpt-6.1-sol","effort":"xhigh","fastMode":true}}`)
+	response, err := http.Post(server.URL+"/api/v1/sessions/p1-1/conversation/turns/turn-1/edit", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	target := service.sent.ProviderSwitch
+	if target == nil || target.TargetHarness != domain.HarnessCodex || target.Model != "gpt-6.1-sol" || target.Effort != "xhigh" || !target.FastMode {
+		t.Fatalf("edit target = %+v", target)
 	}
 }

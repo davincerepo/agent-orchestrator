@@ -20751,6 +20751,8 @@ components:
       properties:
         clientMessageId:
           type: string
+        providerSwitch:
+          $ref: '#/components/schemas/ProviderSwitchRequest'
         text:
           type: string
       required:

@@ -3595,8 +3595,9 @@ type SteerOrSendConversationResponse struct {
 // prompt. Structured content is intentionally absent: the service reuses the
 // server-side blocks recorded with the original message.
 type EditConversationMessageRequest struct {
-	Text            string `json:"text"`
-	ClientMessageID string `json:"clientMessageId,omitempty"`
+	Text            string                 `json:"text"`
+	ClientMessageID string                 `json:"clientMessageId,omitempty"`
+	ProviderSwitch  *ProviderSwitchRequest `json:"providerSwitch,omitempty"`
 }
 
 // ConversationContentSummaryResponse is a lightweight attachment/resource chip.

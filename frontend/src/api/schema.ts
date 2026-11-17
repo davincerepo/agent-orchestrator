@@ -7151,6 +7151,7 @@ export interface components {
         };
         EditConversationMessageRequest: {
             clientMessageId?: string;
+            providerSwitch?: components["schemas"]["ProviderSwitchRequest"];
             text: string;
         };
         EditConversationMessageResponse: {

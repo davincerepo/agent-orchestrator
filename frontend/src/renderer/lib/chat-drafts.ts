@@ -1,5 +1,6 @@
 import { isExcerptSnapshot, isFlowchartOnlySnapshot, type ChatExcerptSnapshot } from "../../shared/chat-excerpt";
 import type { ChatFileReference } from "../../shared/chat-file-reference";
+import type { components } from "../../api/schema";
 import type { ConversationContentSummary } from "../types/conversation";
 import { isCloudAttachmentReference } from "./cloud-attachment-reference";
 
@@ -143,6 +144,7 @@ export interface ChatInlineEditDelivery {
 	clientMessageId: string;
 	turnId: string;
 	requestText: string;
+	providerSwitch?: Omit<components["schemas"]["ProviderSwitchRequest"], "idempotencyKey" | "message">;
 }
 
 export type ChatDraftInlineEditInput = Omit<ChatDraftInlineEdit, "revision">;
@@ -199,6 +201,7 @@ export interface PrepareChatComposerDeliveryInput {
 }
 
 export interface PrepareChatInlineEditDeliveryInput extends ChatDraftInlineEditInput {
+	providerSwitch?: ChatInlineEditDelivery["providerSwitch"];
 	clientMessageId: string;
 }
 
@@ -1352,6 +1355,7 @@ export function prepareChatInlineEditDelivery(
 		clientMessageId: input.clientMessageId,
 		turnId: input.turnId,
 		requestText: input.text,
+		...(input.providerSwitch ? { providerSwitch: structuredClone(input.providerSwitch) } : {}),
 	};
 	const next: ChatSessionDraft = {
 		...loaded.draft,

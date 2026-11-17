@@ -478,6 +478,8 @@ func IsInternalReplayContent(content ChatContent) bool {
 
 // ChatUserMessage is one inbound request to the agent.
 type ChatUserMessage struct {
+	// ProviderSwitch is an optional target for an edited historical prompt.
+	ProviderSwitch *domain.ProviderSwitchRequest
 	// InteractionAt preserves initial acceptance across transition outbox replay.
 	InteractionAt time.Time
 	Text          string

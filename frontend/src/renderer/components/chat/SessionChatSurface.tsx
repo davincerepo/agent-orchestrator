@@ -335,6 +335,15 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 	}, [currentHarness, snapshot?.items, snapshot?.settings.approvalMode]);
 	const permissionModes = useChatPermissionModes(hostId, pendingSwitch?.harness);
 	const pendingPermissionModes = pendingSwitch ? permissionModes?.get(pendingSwitch.harness) : undefined;
+	const editProviderSwitch = pendingSwitch ? {
+		targetHarness: pendingSwitch.harness,
+		model: pendingSwitch.model,
+		effort: switchEffort(pendingSwitch),
+		fastMode: pendingSwitch.fastMode,
+		ultracode: pendingSwitch.ultracode,
+		autoCompactWindow: pendingSwitch.autoCompactWindow,
+		permissionMode: pendingSwitch.approvalMode,
+	} : undefined;
 	const accountSwitch = useSessionAccountSwitch(session, hostId ?? session.hostId);
 	const account = accountSwitch.choice;
 	const agentSwitch = useMemo(
@@ -894,7 +903,18 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 				onOpenArtifact={onOpenArtifact}
 				onOpenFileAnnotation={onOpenFileAnnotation}
 				retryControl={commands.retryControl}
-				onEditMessage={commands.editMessage}
+				editProviderSwitch={editProviderSwitch}
+				onEditMessage={async (turnId, text, clientMessageId, target) => {
+					if (target && pendingSwitch && !pendingPermissionModes) {
+						return { status: "not-accepted", reason: t("agentSwitch.checkingPermissionModes", { agent: agentLabel(pendingSwitch.harness) }) };
+					}
+					const outcome = await commands.editMessage(turnId, text, clientMessageId, target);
+					if (outcome.status === "accepted" && target) {
+						setChosenSwitch(undefined);
+						ultracode.onChange(Boolean(target.ultracode));
+					}
+					return outcome;
+				}}
 				editMessagePending={commands.editMessagePending}
 				editMessageError={commands.editMessageError}
 				onActivateBranch={commands.activateBranch}
