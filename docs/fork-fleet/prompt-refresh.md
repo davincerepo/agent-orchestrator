@@ -85,5 +85,4 @@ Codex 时序略不同：③ 的 `thread/start` 带 `developerInstructions` 时�
     `thread/start` 参数带 `serviceTier`；
   - service/chat `ReloadStandingPrompt` 的 Resume 配置带 `cfg.ServiceTier`。
   待这些字段随上游进入 common 后，本分支 rebase 即可直接引用，此条撤下。
-- 本分支基于 common，不含 `codex/fix-chat-history-edit` 临时补丁（按约定仅集成于 `main-fleet`，
-  上游修复后撤下）；**连续两次重载的回归测试随 `main-fleet` 集成补充**。
+- 连续两次重载的回归测试随 `main-fleet` 集成补充。
