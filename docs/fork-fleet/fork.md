@@ -19,6 +19,8 @@
 
 `codex/fix-edit-provider-switch` 修复历史消息编辑重发遗漏所选 Agent、模型和 effort 的问题，见 [edit-provider-switch.md](edit-provider-switch.md)。
 
+`codex/fix-project-thread-state` 修复替换项目 Orchestrator 时继承旧线程故障、关闭和归档状态的问题，见 [project-thread-state.md](project-thread-state.md)。
+
 ## 分支维护约定
 
 - 实现先提交到所属功能分支，再合入 `main-fleet`；功能分支保持独立，不反向合入集成分支。
