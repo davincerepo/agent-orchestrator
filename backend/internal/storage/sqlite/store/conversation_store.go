@@ -201,6 +201,7 @@ func (s *Store) createConversation(
 			if options.contextReset != nil {
 				transactionName += " with reset"
 			}
+			ownerChanged := existing.CurrentSessionID == nil || *existing.CurrentSessionID != options.session
 			rebind := func(q *gen.Queries) error {
 				if err := q.BindProjectConversationSession(ctx, gen.BindProjectConversationSessionParams{
 					CurrentSessionID: &options.session,
@@ -209,7 +210,14 @@ func (s *Store) createConversation(
 				}); err != nil {
 					return fmt.Errorf("bind project conversation %s to %s: %w", existing.ID, options.session, err)
 				}
-				if existing.CurrentSessionID == nil || *existing.CurrentSessionID != options.session {
+				if ownerChanged {
+					// The project narrative survives replacement, but the previous
+					// provider's failure, closed and archived state does not.
+					if err := q.UpdateConversationThreadState(ctx, gen.UpdateConversationThreadStateParams{
+						ThreadStateJson: sql.NullString{}, ID: existing.ID,
+					}); err != nil {
+						return fmt.Errorf("clear previous project thread state: %w", err)
+					}
 					// The previous owner's reserved provider id dies with that owner.
 					// While the conversation is untouched, release it so the new owner
 					// starts on the same root instead of a child provider boundary.
@@ -284,6 +292,9 @@ func (s *Store) createConversation(
 			})
 			if err != nil {
 				return domain.ConversationRecord{}, err
+			}
+			if ownerChanged {
+				existing.ThreadStateJson = sql.NullString{}
 			}
 			existing.CurrentSessionID = &options.session
 			existing.UpdatedAt = options.now

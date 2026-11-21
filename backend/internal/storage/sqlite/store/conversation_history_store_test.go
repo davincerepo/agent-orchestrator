@@ -1184,6 +1184,52 @@ func TestProjectConversationFreshContextRebindWritesResetBoundaryAtomically(t *t
 	}
 }
 
+func TestProjectConversationReplacementClearsPreviousThreadState(t *testing.T) {
+	for _, status := range []domain.ThreadStatus{domain.ThreadStatusSystemError, domain.ThreadStatusClosed} {
+		t.Run(string(status), func(t *testing.T) {
+			s := newTestStore(t)
+			ctx := context.Background()
+			seedProject(t, s, "replace-thread")
+			record := sampleRecord("replace-thread")
+			record.Kind = domain.KindOrchestrator
+			record.Mode = domain.SessionModeChat
+			first, err := s.CreateSession(ctx, record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conversation, err := s.CreateConversation(ctx, "replace-conversation", domain.ConversationScopeProject,
+				"replace-thread", first.ID, histClock)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.RecordThreadState(ctx, conversation.ID, domain.ConversationThreadState{
+				Status: status, UpdatedAt: histClock, ClosedAt: &histClock, ArchivedAt: &histClock,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			// Reopening the same owner must retain the provider's reported failure.
+			same, err := s.CreateConversation(ctx, "unused", domain.ConversationScopeProject,
+				"replace-thread", first.ID, histClock)
+			if err != nil || same.ThreadState == nil || same.ThreadState.Status != status {
+				t.Fatalf("same owner lost thread state: %+v, %v", same.ThreadState, err)
+			}
+			second, err := s.CreateSession(ctx, record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			replaced, err := s.CreateProjectConversationWithContextReset(ctx, "unused", "replace-thread", second.ID,
+				domain.ConversationActivity{}, histClock.Add(time.Minute))
+			if err != nil || replaced.ThreadState != nil {
+				t.Fatalf("new owner inherited thread state: %+v, %v", replaced.ThreadState, err)
+			}
+			saved, err := s.ConversationForSession(ctx, second.ID)
+			if err != nil || saved.ThreadState != nil {
+				t.Fatalf("new owner persisted old thread state: %+v, %v", saved.ThreadState, err)
+			}
+		})
+	}
+}
+
 func TestQueuedTurnPromotionReservationPreservesTheOtherQueueOrder(t *testing.T) {
 	s, session, conversation := conversationFixture(t)
 	ctx := context.Background()
