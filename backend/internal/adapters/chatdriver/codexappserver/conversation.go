@@ -70,7 +70,6 @@ type conversation struct {
 	fastTiers                map[string]string
 	threadSettingsKnown      bool
 	threadSettingsRevision   uint64
-	settingsRefresh          *threadSettingsRefresh
 
 	mu            sync.Mutex
 	pending       map[string]*parkedRequest
@@ -478,9 +477,6 @@ func turnSandboxPolicy(sandbox string) map[string]any {
 // account, and gated by entitlement that AO cannot see. A table in AO would be
 // wrong within a week.
 func (c *conversation) ListModels(ctx context.Context) ([]ports.ChatModel, error) {
-	if err := c.ensureThreadSettings(ctx); err != nil {
-		return nil, err
-	}
 	models, err := listModels(ctx, c.conn)
 	if err != nil {
 		return nil, err
@@ -492,14 +488,16 @@ func (c *conversation) ListModels(ctx context.Context) ([]ports.ChatModel, error
 		}
 	}
 	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	// Catalog reads can overlap turn dispatch. Confirm the thread afterwards,
+	// holding dispatch until its settings have been copied into the response.
+	if err := c.ensureThreadSettings(ctx); err != nil {
+		return nil, err
+	}
 	c.fastTiers = fastTiers
-	c.sendMu.Unlock()
 	// Thread settings include the user's config; model/list only has generic defaults.
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.threadSettingsKnown {
-		return nil, errors.New("Codex thread settings changed while reading models; reopen the session to retry")
-	}
 	// Only confirmed thread settings may replace the catalog's generic defaults.
 	found := false
 	for i := range models {

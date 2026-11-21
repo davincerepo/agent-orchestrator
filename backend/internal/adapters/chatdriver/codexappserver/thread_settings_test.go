@@ -108,8 +108,8 @@ func TestFleetThreadSettingsFailureDoesNotAdvertiseCatalogDefaults(t *testing.T)
 			if models, err := c.ListModels(ctx); err == nil || len(models) != 0 {
 				t.Fatalf("unconfirmed settings advertised: %+v, %v", models, err)
 			}
-			if fleetMethodCount(srv, "thread/loaded/list") != 1 || srv.sentMethod("model/list") {
-				t.Fatal("failed read retried or leaked catalog defaults")
+			if fleetMethodCount(srv, "thread/loaded/list") != 1 {
+				t.Fatal("failed thread settings read retried")
 			}
 			if (failure == "not-loaded" || failure == "unsupported" || failure == "timeout") && srv.sentMethod("thread/resume") {
 				t.Fatal("attempted a cold resume without a confirmed loaded thread")
@@ -150,6 +150,36 @@ func TestFleetThreadSettingsConcurrentReadsAndNewerNotification(t *testing.T) {
 	}
 	if fleetMethodCount(srv, "thread/resume") != 1 {
 		t.Fatal("concurrent requests did not share the recovery")
+	}
+}
+
+func TestFleetModelsReadConfirmsSettingsAfterConcurrentTurn(t *testing.T) {
+	c, srv := fleetReconnectedConversation(t)
+	srv.mu.Lock()
+	delete(srv.responses, "model/list")
+	srv.mu.Unlock()
+	type result struct {
+		models []ports.ChatModel
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		models, err := c.ListModels(context.Background())
+		done <- result{models, err}
+	}()
+	f := srv.awaitFrame(func(f frame) bool { return f.Method == "model/list" })
+	if _, err := c.SendTurn(context.Background(), ports.ChatUserMessage{Text: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	srv.reply("thread/resume", `{"thread":{"id":"thread-survived"},"model":"sol","reasoningEffort":"high"}`)
+	srv.push(`{"id":` + string(*f.ID) + `,"result":{"data":[{"id":"sol","defaultReasoningEffort":"medium"}]}}`)
+	select {
+	case got := <-done:
+		if got.err != nil || len(got.models) != 1 || !got.models[0].Default || got.models[0].DefaultEffort != "high" {
+			t.Fatalf("concurrent turn broke model confirmation: %+v, %v", got.models, got.err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("model read blocked after the catalog response")
 	}
 }
 
