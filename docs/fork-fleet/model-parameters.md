@@ -5,6 +5,7 @@
 - `serviceTier`：`priority` 开启 Fast，`default` 明确关闭，未设置时继承。只向 Codex 传递；界面仅对能力目录声明支持的模型显示 Fast，未知自定义模型不借用其他模型的能力。
 - Worker、Orchestrator、Reviewer 可独立保存默认值；新任务和 Chat 下一轮可覆盖。Reviewer 角色配置优先于公共配置，恢复已有会话不套用后来修改的项目默认值。
 - Chat 重连持久 provider 后按需读取已加载线程的真实设置；线程通知更新反显。进入会话重新查询，失败显示未确认，不拿全局默认或旧缓存冒充真实值。
+- Codex 模型查询先读取 `model/list`，随后与 turn 下发串行确认线程参数并构造返回值，避免进入会话时恰逢发送消息、`turn/start` 使缓存失效而误报 `Model parameters could not be confirmed`。目录读取期间仍可发送消息；真实参数读取失败仍显示未确认，重新进入会话可重试。
 - Terminal 每次进入读取当前运行代际对应的 Codex 原生历史，显示 Model / Effort / Fast。只读已保存记录，未落盘变化下次进入才可见；未知值和读取失败保留为未确认。
 - Chat / Terminal 切换在源端停止并落盘后读取参数，与控制权切换一起提交；Chat 明确的下一轮选择优先于原生快照，Terminal 原生状态优先于旧 Chat 设置。读取失败中止切换，保留官方回滚机制。
 - Session 只读写官方 `Effort/effort`。升级时一次性搬迁旧 `sessions.reasoning_effort` 数据并删除旧列；已有非空官方值优先。官方 Chat 设置中的 `ReasoningEffort` 与 provider 协议字段保持原样。
