@@ -289,8 +289,11 @@ func TestStartCompletesHandshakeAndOpensThread(t *testing.T) {
 func TestReconnectAdoptsInitializedHostWithoutNativeResume(t *testing.T) {
 	d, srv := newTestDriver(t)
 	srv.replyError("initialize", -32600, "Already initialized")
+	srv.reply("thread/loaded/list", `{"data":["thread-survived"]}`)
+	srv.reply("thread/resume", `{"thread":{"id":"thread-survived"},"model":"sol","reasoningEffort":"high"}`)
+	workdir := t.TempDir()
 	prepareCalls := 0
-	proc, err := d.spawn(context.Background(), "codex", "/tmp/ws", nil)
+	proc, err := d.spawn(context.Background(), "codex", workdir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +309,7 @@ func TestReconnectAdoptsInitializedHostWithoutNativeResume(t *testing.T) {
 
 	conv, err := d.Reconnect(context.Background(), ports.ChatResumeConfig{
 		SessionID: "ao-reconnect", ProviderConversationID: "thread-survived",
-		DataDir: t.TempDir(), WorkspacePath: "/tmp/ws",
+		DataDir: t.TempDir(), WorkspacePath: workdir,
 		PrepareEnv: func(context.Context) (map[string]string, error) {
 			prepareCalls++
 			return map[string]string{"AO_BROWSER_CAPABILITY": "rotated"}, nil

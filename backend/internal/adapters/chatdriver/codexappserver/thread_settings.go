@@ -10,48 +10,17 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/chatdriver/codexappserver/codexproto"
 )
 
-type threadSettingsRefresh struct {
-	done chan struct{}
-	err  error
-}
-
 // ensureThreadSettings repairs the in-memory display cache. It never writes AO
 // turn overrides or reads global config as a substitute for the loaded thread.
-// Concurrent viewers share one bounded attempt; a later visit may retry failure.
+// The caller holds sendMu through confirmation and response construction, so a
+// concurrent turn cannot invalidate the settings between those operations.
 func (c *conversation) ensureThreadSettings(ctx context.Context) error {
-	c.mu.Lock()
-	if c.threadSettingsKnown {
-		c.mu.Unlock()
-		return nil
-	}
-	if pending := c.settingsRefresh; pending != nil {
-		c.mu.Unlock()
-		select {
-		case <-pending.done:
-			return pending.err
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	pending := &threadSettingsRefresh{done: make(chan struct{})}
-	c.settingsRefresh = pending
-	c.mu.Unlock()
-
 	readCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	err := c.readLoadedThreadSettings(readCtx)
-	cancel()
-	c.mu.Lock()
-	pending.err = err
-	c.settingsRefresh = nil
-	close(pending.done)
-	c.mu.Unlock()
-	return err
+	defer cancel()
+	return c.readLoadedThreadSettings(readCtx)
 }
 
 func (c *conversation) readLoadedThreadSettings(ctx context.Context) error {
-	// Do not race a new turn's overrides with the snapshot read.
-	c.sendMu.Lock()
-	defer c.sendMu.Unlock()
 	c.mu.Lock()
 	known, revision := c.threadSettingsKnown, c.threadSettingsRevision
 	c.mu.Unlock()
